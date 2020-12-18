@@ -191,7 +191,7 @@ class Alveo_NxU200_Platform(Platform):
 class Alveo_NxU250_Platform(Platform):
 
     def __init__(self, ndevices=1):
-        sll_counts = [[0, 1662, 0, 0], [1285, 0, 0, 1450], [0, 1575, 0, 1568], [0, 0, 1709, 0]]
+        sll_counts = [[0, 1662, 0, 0], [1285, 0, 1450, 0], [0, 1575, 0, 1568], [0, 0, 1709, 0]]
         super(Alveo_NxU250_Platform, self).__init__(nslr=4, ndevices=ndevices, sll_count=sll_counts, eth_slr=3, eth_gbps=100)
 
     @property
