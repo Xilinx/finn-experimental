@@ -522,6 +522,8 @@ def res_estimation_complete(model):
 #rel_anchors = [(0,-1)]
 
 def partition(model, target_clk_ns, target_platform="U250", ndevices=1, abs_anchors=[], rel_anchors=[], timeout=300):
+    # get platform
+    fp_pfm = platforms[target_platform](ndevices)
     #get resources
     resources = model.analysis(res_estimation_complete)
     #post-process into list of lists
@@ -557,13 +559,11 @@ def partition(model, target_clk_ns, target_platform="U250", ndevices=1, abs_anch
         inst = getCustomOp(model.graph.node[edge[0]])
         nwires = inst.get_outstream_width_padded()
         if inst.get_exp_cycles() == 0:
-            nbps = 10**11
+            nbps = fp_pfm.eth_gbps
         else:
             nbps = int(10**9 * (inst.get_outstream_width_padded() * inst.get_number_output_values()) / (target_clk_ns * inst.get_exp_cycles()))
         edge_costs.append((nwires, nbps))
 
-
-    fp_pfm = platforms[target_platform](ndevices)
     partitioner = ILP_partitioner()
     partitioner.create_model(task_requirements, graph_edges, edge_costs, fp_pfm.guide_resources, fp_pfm.compute_connection_cost, fp_pfm.compute_connection_resource, abs_anchors,rel_anchors)
     partitioner.solve_model(max_seconds=timeout)

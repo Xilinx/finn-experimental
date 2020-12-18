@@ -30,16 +30,29 @@ import numpy as np
 from abc import abstractmethod
 
 DC = -1  # explicit value for don't care
-RES_UTIL_GUIDE = np.array([.7,.5,.80,.50,.50])
+DEFAULT_RES_LIMITS = np.array([.7,.5,.80,.80,.80])
+
+DDR_RESOURCE_REQUIREMENTS = {"LUT": 33256, "FF": 44889, "BRAM_18K": 199, "URAM": 0, "DSP": 3}
+HBM_RESOURCE_REQUIREMENTS = {"LUT": 10718, "FF": 21793, "BRAM_18K": 8, "URAM": 0, "DSP": 0}
+
+# we assume use of VNx Alveo UDP stack (https://gitenterprise.xilinx.com/mruiznog/vitis_network_layer) 
+ETH_RESOURCE_REQUIREMENTS = {"LUT": 35219, "FF": 86269, "BRAM_18K": 183, "URAM": 0, "DSP": 0}
 
 class Platform():
 
-    def __init__(self, nslr=1, ndevices=1, sll_count=[], eth_slr=0, eth_gbps=0):
+    def __init__(self, nslr=1, ndevices=1, sll_count=[], hbm_slr=-1, ddr_slr=[0], eth_slr=0, eth_gbps=0, limits=DEFAULT_RES_LIMITS):
         self.nslr = nslr
         self.sll_count = sll_count
         self.eth_slr = eth_slr
         self.eth_gbps = eth_gbps
         self.ndevices = ndevices
+        self.hbm_slr = hbm_slr
+        self.ddr_slr = ddr_slr
+        # limits must be a np.array either of 
+        # the same shape as compute_resources
+        # or broadcastable to it
+        self.res_limits = limits
+
 
     @property
     @abstractmethod
@@ -49,9 +62,32 @@ class Platform():
     @property
     def guide_resources(self):
         guide = []
-        for i in range(self.nslr):
-            guide_res = np.array(self.compute_resources[i])*RES_UTIL_GUIDE
-            guide.append(list(guide_res.astype(int)))
+        # TODO: assert limits is of correct size
+        guide_res = (np.tile(np.array(self.compute_resources),(self.ndevices,1))*self.res_limits).astype(int)
+        for i in range(self.nslr*self.ndevices):
+            # when in multi-FPGA mode, subtract cost of UDP connection from eth_slr
+            local_slr = i%self.nslr
+            if self.ndevices > 1 and local_slr == self.eth_slr:
+                guide_res[i][0] -= ETH_RESOURCE_REQUIREMENTS["LUT"]
+                guide_res[i][1] -= ETH_RESOURCE_REQUIREMENTS["FF"]
+                guide_res[i][2] -= ETH_RESOURCE_REQUIREMENTS["BRAM_18K"]
+                guide_res[i][3] -= ETH_RESOURCE_REQUIREMENTS["URAM"]
+                guide_res[i][4] -= ETH_RESOURCE_REQUIREMENTS["DSP"]
+            # subtract the cost of memory controllers
+            # if we have a choice between DDR and HBM, use HBM
+            if local_slr == self.hbm_slr:
+                guide_res[i][0] -= HBM_RESOURCE_REQUIREMENTS["LUT"]
+                guide_res[i][1] -= HBM_RESOURCE_REQUIREMENTS["FF"]
+                guide_res[i][2] -= HBM_RESOURCE_REQUIREMENTS["BRAM_18K"]
+                guide_res[i][3] -= HBM_RESOURCE_REQUIREMENTS["URAM"]
+                guide_res[i][4] -= HBM_RESOURCE_REQUIREMENTS["DSP"]
+            elif local_slr in self.ddr_slr:
+                guide_res[i][0] -= DDR_RESOURCE_REQUIREMENTS["LUT"]
+                guide_res[i][1] -= DDR_RESOURCE_REQUIREMENTS["FF"]
+                guide_res[i][2] -= DDR_RESOURCE_REQUIREMENTS["BRAM_18K"]
+                guide_res[i][3] -= DDR_RESOURCE_REQUIREMENTS["URAM"]
+                guide_res[i][4] -= DDR_RESOURCE_REQUIREMENTS["DSP"]
+            guide.append(list(guide_res[i]))
         return guide
 
     @property
@@ -59,11 +95,11 @@ class Platform():
         res = dict()
         for i in range(self.nslr*self.ndevices):
             slr_res = dict()
-            slr_res["LUT"] = self.compute_resources[i][0]
-            slr_res["FF"] = self.compute_resources[i][1]
-            slr_res["BRAM_18K"] = self.compute_resources[i][2]
-            slr_res["URAM"] = self.compute_resources[i][3]
-            slr_res["DSP"] = self.compute_resources[i][4]
+            slr_res["LUT"] = self.compute_resources[i%self.nslr][0]
+            slr_res["FF"] = self.compute_resources[i%self.nslr][1]
+            slr_res["BRAM_18K"] = self.compute_resources[i%self.nslr][2]
+            slr_res["URAM"] = self.compute_resources[i%self.nslr][3]
+            slr_res["DSP"] = self.compute_resources[i%self.nslr][4]
             res["slr"+str(i)] = slr_res
         return res
 
@@ -133,84 +169,97 @@ class Platform():
 class Zynq7020_Platform(Platform):
 
     def __init__(self, ndevices=1):
-        super(Zynq7020_Platform, self).__init__(nslr=1, ndevices=ndevices, sll_count=[[0]], eth_slr=0, eth_gbps=1)
+        super(Zynq7020_Platform, self).__init__(nslr=1, ndevices=ndevices, sll_count=[[0]], ddr_slr=[], eth_slr=0, eth_gbps=1)
 
     @property
     def compute_resources(self):
-        # U50 has identical resource counts on both SLRs
-        return [[53200, 2*53200, 280, 0, 220] for i in range(2)]
+        return [[53200, 2*53200, 280, 0, 220] for i in range(1)]
 
 
 class ZU3EG_Platform(Platform):
 
     def __init__(self, ndevices=1):
-        super(ZU3EG_Platform, self).__init__(nslr=1, ndevices=ndevices, sll_count=[[0]], eth_slr=0, eth_gbps=1)
+        super(ZU3EG_Platform, self).__init__(nslr=1, ndevices=ndevices, sll_count=[[0]], ddr_slr=[], eth_slr=0, eth_gbps=1)
 
     @property
     def compute_resources(self):
-        # U50 has identical resource counts on both SLRs
-        return [[71000, 2*71000, 412, 0, 360] for i in range(2)]
+        return [[71000, 2*71000, 412, 0, 360] for i in range(1)]
 
 
 class ZU7EV_Platform(Platform):
 
     def __init__(self, ndevices=1):
-        super(ZU7EV_Platform, self).__init__(nslr=1, ndevices=ndevices, sll_count=[[0]], eth_slr=0, eth_gbps=1)
+        super(ZU7EV_Platform, self).__init__(nslr=1, ndevices=ndevices, sll_count=[[0]], ddr_slr=[], eth_slr=0, eth_gbps=1)
 
     @property
     def compute_resources(self):
-        # U50 has identical resource counts on both SLRs
-        return [[230000, 2*230000, 610, 92, 1728] for i in range(2)]
+        return [[230000, 2*230000, 610, 92, 1728] for i in range(1)]
 
 
 class Alveo_NxU50_Platform(Platform):
 
     def __init__(self, ndevices=1):
-        sll_counts = [[0, 1662],[1285,0]]
-        super(Alveo_NxU50_Platform, self).__init__(nslr=2, ndevices=ndevices, sll_count=sll_counts, eth_slr=1, eth_gbps=100)
+        # according to Vivado: 23040 SLR0 <-> SLR1
+        sll_counts = [[0, 5000],[5000,0]]
+        super(Alveo_NxU50_Platform, self).__init__(nslr=2, ndevices=ndevices, sll_count=sll_counts, ddr_slr=[], hbm_slr=0, eth_slr=1, eth_gbps=100)
 
     @property
     def compute_resources(self):
+        # According to UG1120:
         # U50 has identical resource counts on both SLRs
-        return [[365000,2*365000,2*564, 304, 2580] for i in range(2)]
-
+        #return [[365000,2*365000,2*564, 304, 2580] for i in range(2)]
+        # we observe from Vivado that the resource counts are actually:
+        return [[374400, 2*374400, 2*564, 304, 2592],
+                [368160, 2*368160, 2*564, 304, 2760]]
 
 class Alveo_NxU200_Platform(Platform):
 
     def __init__(self, ndevices=1):
-        sll_counts = [[0, 1662, 0], [1285, 0, 1450], [0, 1568, 0]]
-        super(Alveo_NxU200_Platform, self).__init__(nslr=3, ndevices=ndevices, sll_count=sll_counts, eth_slr=2, eth_gbps=100)
+        sll_counts = [[0, 5000, 0], [5000, 0, 5000], [0, 5000, 0]]
+        super(Alveo_NxU200_Platform, self).__init__(nslr=3, ndevices=ndevices, sll_count=sll_counts, ddr_slr=[0,2], eth_slr=2, eth_gbps=100)
 
     @property
     def compute_resources(self):
-        return [[355000, 723000, 2*638, 320, 2265],
-                [160000, 331000, 2*326, 160, 1317],
-                [355000, 723000, 2*638, 320, 2265]]
+        # According to UG1120:
+        #return [[355000, 723000, 2*638, 320, 2265],
+        #        [160000, 331000, 2*326, 160, 1317],
+        #        [355000, 723000, 2*638, 320, 2265]]
+        # we observe from Vivado that the resource counts are actually:
+        return [[385920, 2*385920, 2*714, 320, 2268],
+                [199680, 2*199680, 2*420, 160, 1320],
+                [385920, 2*385920, 2*714, 320, 2268]]
 
 
 class Alveo_NxU250_Platform(Platform):
 
     def __init__(self, ndevices=1):
-        sll_counts = [[0, 1662, 0, 0], [1285, 0, 1450, 0], [0, 1575, 0, 1568], [0, 0, 1709, 0]]
-        super(Alveo_NxU250_Platform, self).__init__(nslr=4, ndevices=ndevices, sll_count=sll_counts, eth_slr=3, eth_gbps=100)
+        sll_counts = [[0, 5000, 0, 0], [5000, 0, 5000, 0], [0, 5000, 0, 5000], [0, 0, 5000, 0]]
+        super(Alveo_NxU250_Platform, self).__init__(nslr=4, ndevices=ndevices, sll_count=sll_counts, ddr_slr=[0,1,2,3], eth_slr=3, eth_gbps=100)
 
     @property
     def compute_resources(self):
-        # U250 has identical resource counts on all 4 SLRs
-        return [[345000,2*345000,2*500, 320, 2877] for i in range(4)]
-
+        # According to UG1120:
+        # U250 has identical resource counts on all 4 SLRs:
+        #return [[345000,2*345000,2*500, 320, 2877] for i in range(4)]
+        # we observe from Vivado that the resource counts are actually:
+        return [[375000,2*375000,2*576, 320, 2880] for i in range(4)]
 
 class Alveo_NxU280_Platform(Platform):
 
     def __init__(self, ndevices=1):
-        sll_counts = [[0, 1662, 0], [1285, 0, 1450], [0, 1568, 0]]
-        super(Alveo_NxU280_Platform, self).__init__(nslr=3, ndevices=ndevices, sll_count=sll_counts, eth_slr=2, eth_gbps=100)
+        sll_counts = [[0, 5000, 0], [5000, 0, 5000], [0, 5000, 0]]
+        super(Alveo_NxU280_Platform, self).__init__(nslr=3, ndevices=ndevices, sll_count=sll_counts, ddr_slr=[0,1], hbm_slr=0, eth_slr=2, eth_gbps=100)
 
     @property
     def compute_resources(self):
-        return [[369000, 746000, 2*507, 320, 2733],
-                [333000, 675000, 2*468, 320, 2877],
-                [367000, 729000, 2*512, 320, 2880]]
+        # according to UG1120
+        #return [[369000, 746000, 2*507, 320, 2733],
+        #        [333000, 675000, 2*468, 320, 2877],
+        #        [367000, 729000, 2*512, 320, 2880]]
+        # observed from Vivado:
+        return [[400800, 2*400800, 2*600, 320, 2736],
+                [382080, 2*382080, 2*576, 320, 2880],
+                [380640, 2*380640, 2*576, 320, 2880]]
 
 
 platforms = dict()

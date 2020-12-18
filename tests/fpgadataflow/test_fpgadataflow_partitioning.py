@@ -105,7 +105,7 @@ def make_multi_fclayer_model(ch, wdt, adt, tdt, nnodes):
 @pytest.mark.parametrize("wdt", [DataType.INT2])
 @pytest.mark.parametrize("adt", [DataType.UINT4])
 @pytest.mark.parametrize("tdt", [DataType.INT16])
-@pytest.mark.parametrize("nnodes", [10, 15, 20, 200])
+@pytest.mark.parametrize("nnodes", [5, 20, 200])
 @pytest.mark.parametrize("platform", ["U50", "U250"])
 def test_partitioning(ch, wdt, adt, tdt, nnodes, platform):
     model = make_multi_fclayer_model(ch, wdt, adt, tdt, nnodes)
