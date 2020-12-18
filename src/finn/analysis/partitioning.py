@@ -292,6 +292,9 @@ class ILP_partitioner(object):
                 print()
             print("\n")
 
+    def is_infeasible(self,):
+        return (self.solution_status != OptimizationStatus.OPTIMAL and 
+                self.solution_status != OptimizationStatus.FEASIBLE)
 
     def show_edge_stats(self,):
         if self.solution_status != OptimizationStatus.OPTIMAL and self.solution_status != OptimizationStatus.FEASIBLE:
@@ -518,7 +521,7 @@ def res_estimation_complete(model):
 #rel_anchors= [(0,1),]
 #rel_anchors = [(0,-1)]
 
-def partition(model, target_clk_ns, target_platform="U250", ndevices=1, abs_anchors=[], rel_anchors=[]):
+def partition(model, target_clk_ns, target_platform="U250", ndevices=1, abs_anchors=[], rel_anchors=[], timeout=300):
     #get resources
     resources = model.analysis(res_estimation_complete)
     #post-process into list of lists
@@ -554,7 +557,6 @@ def partition(model, target_clk_ns, target_platform="U250", ndevices=1, abs_anch
         inst = getCustomOp(model.graph.node[edge[0]])
         nwires = inst.get_outstream_width_padded()
         if inst.get_exp_cycles() == 0:
-            print(inst.onnx_node.name+" does not implement get_exp_cycles, hacking away...")
             nbps = 10**11
         else:
             nbps = int(10**9 * (inst.get_outstream_width_padded() * inst.get_number_output_values()) / (target_clk_ns * inst.get_exp_cycles()))
@@ -564,9 +566,12 @@ def partition(model, target_clk_ns, target_platform="U250", ndevices=1, abs_anch
     fp_pfm = platforms[target_platform](ndevices)
     partitioner = ILP_partitioner()
     partitioner.create_model(task_requirements, graph_edges, edge_costs, fp_pfm.guide_resources, fp_pfm.compute_connection_cost, fp_pfm.compute_connection_resource, abs_anchors,rel_anchors)
-    partitioner.solve_model()
-    partitioner.report_best_solution(["LUT", "FF",  "BRAMs", "URAM", "DSPs"], ["SLL", "Eth Mbps"], verbose = True)
+    partitioner.solve_model(max_seconds=timeout)
+    # if problem is infeasible, return None
+    if partitioner.is_infeasible():
+        return None
 
+    partitioner.report_best_solution(["LUT", "FF",  "BRAMs", "URAM", "DSPs"], ["SLL", "Eth Mbps"], verbose = True)
     solution = partitioner.get_solution()
     
     floorplan = model.analysis(floorplan_params)
