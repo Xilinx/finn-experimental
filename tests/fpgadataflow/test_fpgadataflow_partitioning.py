@@ -107,7 +107,7 @@ def make_multi_fclayer_model(ch, wdt, adt, tdt, nnodes):
 @pytest.mark.parametrize("tdt", [DataType.INT16])
 @pytest.mark.parametrize("nnodes", [5, 20, 200])
 @pytest.mark.parametrize("platform", ["U50", "U250"])
-def test_partitioning(ch, wdt, adt, tdt, nnodes, platform):
+def test_partitioning_singledevice(ch, wdt, adt, tdt, nnodes, platform):
     model = make_multi_fclayer_model(ch, wdt, adt, tdt, nnodes)
     model = model.transform(GiveUniqueNodeNames())
     model = model.transform(GiveReadableTensorNames())
@@ -117,6 +117,9 @@ def test_partitioning(ch, wdt, adt, tdt, nnodes, platform):
     model = model.transform(GiveReadableTensorNames())
     #apply partitioning
     floorplan = partition(model, 5, platform)
+    if floorplan is not None:
+        assert len(floorplan) == 1
+        floorplan = floorplan[0]
     if nnodes == 200:
         assert floorplan is None
         return
@@ -134,3 +137,51 @@ def test_partitioning(ch, wdt, adt, tdt, nnodes, platform):
         assert len(counts.keys()) == 1
     else:
         assert len(counts.keys()) > 1
+
+@pytest.mark.parametrize("ch", [64])
+@pytest.mark.parametrize("wdt", [DataType.INT2])
+@pytest.mark.parametrize("adt", [DataType.UINT4])
+@pytest.mark.parametrize("tdt", [DataType.INT16])
+@pytest.mark.parametrize("nnodes", [40])
+@pytest.mark.parametrize("platform", ["U50"])
+def test_partitioning_multidevice(ch, wdt, adt, tdt, nnodes, platform):
+    model = make_multi_fclayer_model(ch, wdt, adt, tdt, nnodes)
+    model = model.transform(GiveUniqueNodeNames())
+    model = model.transform(GiveReadableTensorNames())
+    model = model.transform(InsertDWC())
+    model = model.transform(InsertFIFO())
+    model = model.transform(GiveUniqueNodeNames())
+    model = model.transform(GiveReadableTensorNames())
+    #apply partitioning
+    floorplan = partition(model, 5, platform, ndevices=2)
+    if floorplan is not None:
+        assert len(floorplan) == 1
+    floorplan = floorplan[0]
+    model = model.transform(ApplyConfig(floorplan))
+    # check the device assignments of each block and 
+    # count the number of devices required
+    counts = dict()
+    for node in model.graph.node:
+        nodeInst = getCustomOp(node)
+        slr = nodeInst.get_nodeattr("device_id")
+        counts["dev"+str(slr)] = counts.get("dev"+str(slr),0) + 1
+    # check against expectations
+    assert len(counts.keys()) > 1
+    
+@pytest.mark.parametrize("ch", [64])
+@pytest.mark.parametrize("wdt", [DataType.INT2])
+@pytest.mark.parametrize("adt", [DataType.UINT4])
+@pytest.mark.parametrize("tdt", [DataType.INT16])
+@pytest.mark.parametrize("nnodes", [10])
+@pytest.mark.parametrize("platform", ["U50"])
+def test_partitioning_multireplica(ch, wdt, adt, tdt, nnodes, platform):
+    model = make_multi_fclayer_model(ch, wdt, adt, tdt, nnodes)
+    model = model.transform(GiveUniqueNodeNames())
+    model = model.transform(GiveReadableTensorNames())
+    model = model.transform(InsertDWC())
+    model = model.transform(InsertFIFO())
+    model = model.transform(GiveUniqueNodeNames())
+    model = model.transform(GiveReadableTensorNames())
+    #apply partitioning
+    floorplan = partition(model, 5, platform, nreplicas=2)
+    assert len(floorplan) == 2

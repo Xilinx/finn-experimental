@@ -445,17 +445,31 @@ class ILP_partitioner(object):
         nx.draw_circular(DG ,with_labels=with_labels, node_size=node_size,alpha= alpha,arrows=arrows)
 
 
-def replicate_net(vertices, edges, edge_costs, replicas):
+def replicate_net(vertices, edges, edge_costs, abs_anchors=[], rel_anchors=[], slr_per_device=1, devices=1, replicas=1):
     """Duplicate a net, creating a graph with identical disjoint sub-graphs"""
     ret_vertices = []
     ret_edge_costs = []
     ret_edges = []
+    ret_abs_anchors = []
+    ret_rel_anchors = []
     for i in range(replicas):
         ret_vertices += vertices
         ret_edge_costs += edge_costs
+        # construct edges for the multi-net graph
         for edge in edges:
             ret_edges.append((edge[0]+i*len(vertices), edge[1]+i*len(vertices)))
-    return ret_vertices, ret_edges, ret_edge_costs
+        # for each of the replicas apply same abs/rel anchors
+        for anchor in abs_anchors:
+            anchor_node = (anchor[0]+len(vertices))%len(vertices)
+            anchor_slr = []
+            for d in range(devices):
+                anchor_slr += [slr+d*slr_per_device for slr in anchor[1]]
+            ret_abs_anchors += [(anchor_node+i*len(vertices), anchor_slr)]
+        for anchor in rel_anchors:
+            anchor_node1 = (anchor[0]+len(vertices))%len(vertices)
+            anchor_node2 = (anchor[1]+len(vertices))%len(vertices)
+            ret_rel_anchors += [(anchor_node1+i*len(vertices), anchor_node2+i*len(vertices))]
+    return ret_vertices, ret_edges, ret_edge_costs, ret_abs_anchors, ret_rel_anchors
 
 
 def res_estimation_complete(model):
@@ -521,7 +535,7 @@ def res_estimation_complete(model):
 #rel_anchors= [(0,1),]
 #rel_anchors = [(0,-1)]
 
-def partition(model, target_clk_ns, target_platform="U250", ndevices=1, abs_anchors=[], rel_anchors=[], timeout=300):
+def partition(model, target_clk_ns, target_platform="U250", ndevices=1, nreplicas=1, abs_anchors=[], rel_anchors=[], timeout=300):
     # get platform
     fp_pfm = platforms[target_platform](ndevices)
     #get resources
@@ -564,6 +578,9 @@ def partition(model, target_clk_ns, target_platform="U250", ndevices=1, abs_anch
             nbps = int(10**9 * (inst.get_outstream_width_padded() * inst.get_number_output_values()) / (target_clk_ns * inst.get_exp_cycles()))
         edge_costs.append((nwires, nbps))
 
+    # replicate the net as required
+    task_requirements, graph_edges, edge_costs, abs_anchors, rel_anchors = replicate_net(task_requirements, graph_edges, edge_costs, abs_anchors, rel_anchors, slr_per_device=fp_pfm.nslr, devices=fp_pfm.ndevices, replicas=nreplicas)
+
     partitioner = ILP_partitioner()
     partitioner.create_model(task_requirements, graph_edges, edge_costs, fp_pfm.guide_resources, fp_pfm.compute_connection_cost, fp_pfm.compute_connection_resource, abs_anchors,rel_anchors)
     partitioner.solve_model(max_seconds=timeout)
@@ -574,16 +591,20 @@ def partition(model, target_clk_ns, target_platform="U250", ndevices=1, abs_anch
     partitioner.report_best_solution(["LUT", "FF",  "BRAMs", "URAM", "DSPs"], ["SLL", "Eth Mbps"], verbose = True)
     solution = partitioner.get_solution()
     
-    floorplan = model.analysis(floorplan_params)
+    initial_floorplan = model.analysis(floorplan_params)
+    floorplans = []
+    
     i = 0
-    for key in floorplan:
-        if key == "Defaults":
-            continue
-        floorplan[key]['slr'], floorplan[key]['device_id'] = fp_pfm.map_device_to_slr(solution[i]['device'])
-        version = solution[i]['version']
-        config = resources[key][version]["config"]
-        for attr in config:
-            floorplan[key][attr] = config[attr]
-        i += 1
-        
-    return floorplan
+    for replica in range(nreplicas):
+        floorplan = initial_floorplan
+        for key in floorplan:
+            if key == "Defaults":
+                continue
+            floorplan[key]['slr'], floorplan[key]['device_id'] = fp_pfm.map_device_to_slr(solution[i]['device'])
+            version = solution[i]['version']
+            config = resources[key][version]["config"]
+            for attr in config:
+                floorplan[key][attr] = config[attr]
+            i += 1
+        floorplans += [floorplan]
+    return floorplans
