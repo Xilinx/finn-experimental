@@ -31,6 +31,7 @@ from abc import abstractmethod
 
 DC = -1  # explicit value for don't care
 DEFAULT_RES_LIMITS = np.array([.7,.5,.80,.80,.80])
+DEFAULT_AVG_CONSTRAINTS = [((2,3,4),.7)] # 
 
 DDR_RESOURCE_REQUIREMENTS = {"LUT": 33256, "FF": 44889, "BRAM_18K": 199, "URAM": 0, "DSP": 3}
 HBM_RESOURCE_REQUIREMENTS = {"LUT": 10718, "FF": 21793, "BRAM_18K": 8, "URAM": 0, "DSP": 0}
@@ -40,7 +41,8 @@ ETH_RESOURCE_REQUIREMENTS = {"LUT": 35219, "FF": 86269, "BRAM_18K": 183, "URAM":
 
 class Platform():
 
-    def __init__(self, nslr=1, ndevices=1, sll_count=[], hbm_slr=-1, ddr_slr=[0], eth_slr=0, eth_gbps=0, limits=DEFAULT_RES_LIMITS):
+    def __init__(self, nslr=1, ndevices=1, sll_count=[], hbm_slr=-1, ddr_slr=[0], eth_slr=0, eth_gbps=0, 
+            limits=DEFAULT_RES_LIMITS, avg_constraints=DEFAULT_AVG_CONSTRAINTS):
         self.nslr = nslr
         self.sll_count = sll_count
         self.eth_slr = eth_slr
@@ -52,6 +54,7 @@ class Platform():
         # the same shape as compute_resources
         # or broadcastable to it
         self.res_limits = limits
+        self.avg_constraints = avg_constraints # list of tuples of the form ( tuple of resource positions to avg, limit )
 
 
     @property
@@ -63,7 +66,7 @@ class Platform():
     def guide_resources(self):
         guide = []
         # TODO: assert limits is of correct size
-        guide_res = (np.tile(np.array(self.compute_resources),(self.ndevices,1))*self.res_limits).astype(int)
+        guide_res = (np.tile(np.array(self.compute_resources),(self.ndevices,1))).astype(int)
         for i in range(self.nslr*self.ndevices):
             # when in multi-FPGA mode, subtract cost of UDP connection from eth_slr
             local_slr = i%self.nslr
@@ -271,3 +274,4 @@ platforms["Pynq-Z1"] = Zynq7020_Platform
 platforms["Pynq-Z2"] = Zynq7020_Platform
 platforms["Ultra96"] = ZU3EG_Platform
 platforms["ZCU104"] = ZU7EV_Platform
+
