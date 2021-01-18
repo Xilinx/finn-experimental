@@ -43,10 +43,13 @@ class ILP_partitioner(object):
         super(ILP_partitioner, self).__init__()
         self.avg_util_constrains = []
 
-    def create_model(self,task_requirements,task_dependencies,task_dependencies_requirements,compute_resources,compute_connection_cost,compute_connection_resource, abs_anchors=[],rel_anchors=[]):
+    def create_model(self,task_requirements,task_dependencies,task_dependencies_requirements,
+                                compute_resources,compute_connection_cost,compute_connection_resource,
+                                compute_resource_limits , abs_anchors=[],rel_anchors=[]):
 
         time_init = time.perf_counter()
         model = Model("floorplan")
+
 
         #aux lists
         task_nodes  =  list(range(len(task_requirements)))
@@ -84,11 +87,13 @@ class ILP_partitioner(object):
                 dst_task = task_dependencies[j][1]
                 model += xsum(opt_connection_matrix[o][d][j] for o in compute_nodes) == xsum( opt_placement[d][dst_task][v] for v in  task_versions[dst_task])
                 
+            
         # constraint 2: not exceed compute resources
         for i in compute_nodes:
             for r in range(len(compute_resources[0])):
-                model += xsum([ xsum(task_requirements[j][v][r]*opt_placement[i][j][v] for v in task_versions[j] ) for j in task_nodes ]) <= compute_resources[i][r]
+                model += xsum([ xsum(task_requirements[j][v][r]*opt_placement[i][j][v] for v in task_versions[j] ) for j in task_nodes ]) <= compute_resources[i][r]*compute_resource_limits[r]
                 
+
         # constraint 3: not exceed connection resources
         for o in compute_nodes:
             for d in compute_nodes:
@@ -101,8 +106,8 @@ class ILP_partitioner(object):
         # constraint 4: each task is allocated once and only once
         for j in task_nodes:
             sos_vars = [opt_placement[i][j][v] for v in task_versions[j] for i in compute_nodes]
-            # model.add_sos([(var,i) for i,var in enumerate(sos_vars)],1) # to speed up solution
             model += xsum(sos_vars) == 1
+
 
         # constraint 5: anchor constrains 
         for task,compute_node_list in abs_anchors:
@@ -113,6 +118,7 @@ class ILP_partitioner(object):
                 model += xsum(opt_placement[i][task_1][v] for v in task_versions[task_1] ) == xsum(opt_placement[i][task_2][v] for v in task_versions[task_2] ) 
 
         self.time_create_model = time.perf_counter()-time_init
+
 
         # store useful variables
         self.model = model
@@ -567,7 +573,7 @@ def partition(model, target_clk_ns, target_platform="U250", ndevices=1, nreplica
         for dep in node_dependencies:
             graph_edges.append((dep, node_idx))
         
-    #traverse the list of dependencies and for every source node, get the number of wires and the throughtput in bps
+    #traverse the list of dependencies and for every source node, get the number of wires and the throughput in bps
     edge_costs = []
     for edge in graph_edges:
         inst = getCustomOp(model.graph.node[edge[0]])
@@ -582,7 +588,9 @@ def partition(model, target_clk_ns, target_platform="U250", ndevices=1, nreplica
     task_requirements, graph_edges, edge_costs, abs_anchors, rel_anchors = replicate_net(task_requirements, graph_edges, edge_costs, abs_anchors, rel_anchors, slr_per_device=fp_pfm.nslr, devices=fp_pfm.ndevices, replicas=nreplicas)
 
     partitioner = ILP_partitioner()
-    partitioner.create_model(task_requirements, graph_edges, edge_costs, fp_pfm.guide_resources, fp_pfm.compute_connection_cost, fp_pfm.compute_connection_resource, abs_anchors,rel_anchors)
+    partitioner.create_model(task_requirements, graph_edges, edge_costs, fp_pfm.guide_resources, fp_pfm.compute_connection_cost, fp_pfm.compute_connection_resource,fp_pfm.res_limits, abs_anchors,rel_anchors)
+    for avg_resources,avg_limit in fp_pfm.avg_constraints:
+        partitioner.add_average_of_utilizations_constrain(avg_resources,avg_limit)
     partitioner.solve_model(max_seconds=timeout)
     # if problem is infeasible, return None
     if partitioner.is_infeasible():
@@ -608,3 +616,4 @@ def partition(model, target_clk_ns, target_platform="U250", ndevices=1, nreplica
             i += 1
         floorplans += [floorplan]
     return floorplans
+
