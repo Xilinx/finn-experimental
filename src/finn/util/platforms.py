@@ -171,8 +171,8 @@ class Platform():
 
 class Zynq7020_Platform(Platform):
 
-    def __init__(self, ndevices=1):
-        super(Zynq7020_Platform, self).__init__(nslr=1, ndevices=ndevices, sll_count=[[0]], ddr_slr=[], eth_slr=0, eth_gbps=1)
+    def __init__(self, ndevices=1, limits=DEFAULT_RES_LIMITS, avg_constraints=DEFAULT_AVG_CONSTRAINTS):
+        super(Zynq7020_Platform, self).__init__(nslr=1, ndevices=ndevices, sll_count=[[0]], ddr_slr=[], eth_slr=0, eth_gbps=1, limits=limits, avg_constraints=avg_constraints)
 
     @property
     def compute_resources(self):
@@ -181,8 +181,8 @@ class Zynq7020_Platform(Platform):
 
 class ZU3EG_Platform(Platform):
 
-    def __init__(self, ndevices=1):
-        super(ZU3EG_Platform, self).__init__(nslr=1, ndevices=ndevices, sll_count=[[0]], ddr_slr=[], eth_slr=0, eth_gbps=1)
+    def __init__(self, ndevices=1, limits=DEFAULT_RES_LIMITS, avg_constraints=DEFAULT_AVG_CONSTRAINTS):
+        super(ZU3EG_Platform, self).__init__(nslr=1, ndevices=ndevices, sll_count=[[0]], ddr_slr=[], eth_slr=0, eth_gbps=1, limits=limits, avg_constraints=avg_constraints)
 
     @property
     def compute_resources(self):
@@ -191,8 +191,8 @@ class ZU3EG_Platform(Platform):
 
 class ZU7EV_Platform(Platform):
 
-    def __init__(self, ndevices=1):
-        super(ZU7EV_Platform, self).__init__(nslr=1, ndevices=ndevices, sll_count=[[0]], ddr_slr=[], eth_slr=0, eth_gbps=1)
+    def __init__(self, ndevices=1, limits=DEFAULT_RES_LIMITS, avg_constraints=DEFAULT_AVG_CONSTRAINTS):
+        super(ZU7EV_Platform, self).__init__(nslr=1, ndevices=ndevices, sll_count=[[0]], ddr_slr=[], eth_slr=0, eth_gbps=1, limits=limits, avg_constraints=avg_constraints)
 
     @property
     def compute_resources(self):
@@ -201,10 +201,10 @@ class ZU7EV_Platform(Platform):
 
 class Alveo_NxU50_Platform(Platform):
 
-    def __init__(self, ndevices=1):
+    def __init__(self, ndevices=1, limits=DEFAULT_RES_LIMITS, avg_constraints=DEFAULT_AVG_CONSTRAINTS):
         # according to Vivado: 23040 SLR0 <-> SLR1
         sll_counts = [[0, 5000],[5000,0]]
-        super(Alveo_NxU50_Platform, self).__init__(nslr=2, ndevices=ndevices, sll_count=sll_counts, ddr_slr=[], hbm_slr=0, eth_slr=1, eth_gbps=100)
+        super(Alveo_NxU50_Platform, self).__init__(nslr=2, ndevices=ndevices, sll_count=sll_counts, ddr_slr=[], hbm_slr=0, eth_slr=1, eth_gbps=100, limits=limits, avg_constraints=avg_constraints)
 
     @property
     def compute_resources(self):
@@ -217,9 +217,9 @@ class Alveo_NxU50_Platform(Platform):
 
 class Alveo_NxU200_Platform(Platform):
 
-    def __init__(self, ndevices=1):
+    def __init__(self, ndevices=1, limits=DEFAULT_RES_LIMITS, avg_constraints=DEFAULT_AVG_CONSTRAINTS):
         sll_counts = [[0, 5000, 0], [5000, 0, 5000], [0, 5000, 0]]
-        super(Alveo_NxU200_Platform, self).__init__(nslr=3, ndevices=ndevices, sll_count=sll_counts, ddr_slr=[0,2], eth_slr=2, eth_gbps=100)
+        super(Alveo_NxU200_Platform, self).__init__(nslr=3, ndevices=ndevices, sll_count=sll_counts, ddr_slr=[0,2], eth_slr=2, eth_gbps=100, limits=limits, avg_constraints=avg_constraints)
 
     @property
     def compute_resources(self):
@@ -235,9 +235,9 @@ class Alveo_NxU200_Platform(Platform):
 
 class Alveo_NxU250_Platform(Platform):
 
-    def __init__(self, ndevices=1):
+    def __init__(self, ndevices=1, limits=DEFAULT_RES_LIMITS, avg_constraints=DEFAULT_AVG_CONSTRAINTS):
         sll_counts = [[0, 5000, 0, 0], [5000, 0, 5000, 0], [0, 5000, 0, 5000], [0, 0, 5000, 0]]
-        super(Alveo_NxU250_Platform, self).__init__(nslr=4, ndevices=ndevices, sll_count=sll_counts, ddr_slr=[0,1,2,3], eth_slr=3, eth_gbps=100)
+        super(Alveo_NxU250_Platform, self).__init__(nslr=4, ndevices=ndevices, sll_count=sll_counts, ddr_slr=[0,1,2,3], eth_slr=3, eth_gbps=100, limits=limits, avg_constraints=avg_constraints)
 
     @property
     def compute_resources(self):
@@ -249,9 +249,9 @@ class Alveo_NxU250_Platform(Platform):
 
 class Alveo_NxU280_Platform(Platform):
 
-    def __init__(self, ndevices=1):
+    def __init__(self, ndevices=1, limits=DEFAULT_RES_LIMITS, avg_constraints=DEFAULT_AVG_CONSTRAINTS):
         sll_counts = [[0, 5000, 0], [5000, 0, 5000], [0, 5000, 0]]
-        super(Alveo_NxU280_Platform, self).__init__(nslr=3, ndevices=ndevices, sll_count=sll_counts, ddr_slr=[0,1], hbm_slr=0, eth_slr=2, eth_gbps=100)
+        super(Alveo_NxU280_Platform, self).__init__(nslr=3, ndevices=ndevices, sll_count=sll_counts, ddr_slr=[0,1], hbm_slr=0, eth_slr=2, eth_gbps=100, limits=limits, avg_constraints=avg_constraints)
 
     @property
     def compute_resources(self):

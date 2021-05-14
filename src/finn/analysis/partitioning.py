@@ -34,6 +34,8 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from finn.custom_op.registry import getCustomOp
 from finn.util.platforms import platforms
+from finn.util.platforms import DEFAULT_RES_LIMITS
+from finn.util.platforms import DEFAULT_AVG_CONSTRAINTS
 from finn.analysis.fpgadataflow.floorplan_params import floorplan_params
 from finn.util.fpgadataflow import is_fpgadataflow_node
 
@@ -478,7 +480,7 @@ def replicate_net(vertices, edges, edge_costs, abs_anchors=[], rel_anchors=[], s
     return ret_vertices, ret_edges, ret_edge_costs, ret_abs_anchors, ret_rel_anchors
 
 
-def res_estimation_complete(model):
+def res_estimation_complete(model, multivariant=True):
     """Estimates the resources needed for the given model and all values for
     resource-related switches.
     Ensure that all nodes have unique names (by calling the GiveUniqueNodeNames
@@ -492,33 +494,36 @@ def res_estimation_complete(model):
         if is_fpgadataflow_node(node) is True:
             op_type = node.op_type
             inst = getCustomOp(node)
-            if op_type == "StreamingFCLayer_Batch" or op_type == "Vector_Vector_Activate_Batch":
-                orig_restype = inst.get_nodeattr("resType")
-                res_dict[node.name] = []
-                for restype in ["dsp", "lut"]:
-                    inst.set_nodeattr("resType", restype)
-                    config = {"resType": restype}
-                    res_dict[node.name].append({"config": config, "estimate": inst.node_res_estimation()})
-                inst.set_nodeattr("resType", orig_restype)
-            elif op_type == "ConvolutionInputGenerator":
-                orig_ramstyle = inst.get_nodeattr("ram_style")
-                res_dict[node.name] = []
-                for restype in ["block", "distributed", "ultra"]:
-                    inst.set_nodeattr("ram_style", restype)
-                    config = {"ram_style": restype}
-                    res_dict[node.name].append({"config": config, "estimate": inst.node_res_estimation()})
-                inst.set_nodeattr("ram_style", orig_ramstyle)
-            elif op_type == "StreamingFIFO":
-                orig_ramstyle = inst.get_nodeattr("ram_style")
-                orig_impl_style = inst.get_nodeattr("impl_style")
-                res_dict[node.name] = []
-                inst.set_nodeattr("impl_style", "vivado")
-                for restype in ["block", "distributed", "ultra"]:
-                    inst.set_nodeattr("ram_style", restype)
-                    config = {"impl_style": "vivado", "ram_style": restype}
-                    res_dict[node.name].append({"config": config, "estimate": inst.node_res_estimation()})
-                inst.set_nodeattr("ram_style", orig_ramstyle)
-                inst.set_nodeattr("impl_style", orig_impl_style)
+            if multivariant:
+                if op_type == "StreamingFCLayer_Batch" or op_type == "Vector_Vector_Activate_Batch":
+                    orig_restype = inst.get_nodeattr("resType")
+                    res_dict[node.name] = []
+                    for restype in ["dsp", "lut"]:
+                        inst.set_nodeattr("resType", restype)
+                        config = {"resType": restype}
+                        res_dict[node.name].append({"config": config, "estimate": inst.node_res_estimation()})
+                    inst.set_nodeattr("resType", orig_restype)
+                elif op_type == "ConvolutionInputGenerator":
+                    orig_ramstyle = inst.get_nodeattr("ram_style")
+                    res_dict[node.name] = []
+                    for restype in ["block", "distributed", "ultra"]:
+                        inst.set_nodeattr("ram_style", restype)
+                        config = {"ram_style": restype}
+                        res_dict[node.name].append({"config": config, "estimate": inst.node_res_estimation()})
+                    inst.set_nodeattr("ram_style", orig_ramstyle)
+                elif op_type == "StreamingFIFO":
+                    orig_ramstyle = inst.get_nodeattr("ram_style")
+                    orig_impl_style = inst.get_nodeattr("impl_style")
+                    res_dict[node.name] = []
+                    inst.set_nodeattr("impl_style", "vivado")
+                    for restype in ["block", "distributed", "ultra"]:
+                        inst.set_nodeattr("ram_style", restype)
+                        config = {"impl_style": "vivado", "ram_style": restype}
+                        res_dict[node.name].append({"config": config, "estimate": inst.node_res_estimation()})
+                    inst.set_nodeattr("ram_style", orig_ramstyle)
+                    inst.set_nodeattr("impl_style", orig_impl_style)
+                else:
+                    res_dict[node.name] = [{"config": {}, "estimate": inst.node_res_estimation()}]
             else:
                 res_dict[node.name] = [{"config": {}, "estimate": inst.node_res_estimation()}]
 
@@ -541,11 +546,11 @@ def res_estimation_complete(model):
 #rel_anchors= [(0,1),]
 #rel_anchors = [(0,-1)]
 
-def partition(model, target_clk_ns, target_platform="U250", ndevices=1, nreplicas=1, abs_anchors=[], rel_anchors=[], timeout=300):
+def partition(model, target_clk_ns, target_platform="U250", ndevices=1, nreplicas=1, abs_anchors=[], rel_anchors=[], timeout=300, multivariant=True, limits=DEFAULT_RES_LIMITS, avg_constraints=DEFAULT_AVG_CONSTRAINTS):
     # get platform
-    fp_pfm = platforms[target_platform](ndevices)
+    fp_pfm = platforms[target_platform](ndevices, limits=limits, avg_constraints=avg_constraints)
     #get resources
-    resources = model.analysis(res_estimation_complete)
+    resources = res_estimation_complete(model, multivariant=multivariant)
     #post-process into list of lists
     task_requirements = []
     for key in resources:
