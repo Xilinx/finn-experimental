@@ -34,6 +34,8 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from finn.custom_op.registry import getCustomOp
 from finn.util.platforms import platforms
+from finn.util.platforms import DEFAULT_RES_LIMITS
+from finn.util.platforms import DEFAULT_AVG_CONSTRAINTS
 from finn.analysis.fpgadataflow.floorplan_params import floorplan_params
 from finn.util.fpgadataflow import is_fpgadataflow_node
 
@@ -544,9 +546,9 @@ def res_estimation_complete(model, multivariant=True):
 #rel_anchors= [(0,1),]
 #rel_anchors = [(0,-1)]
 
-def partition(model, target_clk_ns, target_platform="U250", ndevices=1, nreplicas=1, abs_anchors=[], rel_anchors=[], timeout=300, multivariant=True):
+def partition(model, target_clk_ns, target_platform="U250", ndevices=1, nreplicas=1, abs_anchors=[], rel_anchors=[], timeout=300, multivariant=True, limits=DEFAULT_RES_LIMITS, avg_constraints=DEFAULT_AVG_CONSTRAINTS):
     # get platform
-    fp_pfm = platforms[target_platform](ndevices)
+    fp_pfm = platforms[target_platform](ndevices, limits=limits, avg_constraints=avg_constraints)
     #get resources
     resources = res_estimation_complete(model, multivariant=multivariant)
     #post-process into list of lists
