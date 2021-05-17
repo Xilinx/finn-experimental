@@ -93,7 +93,7 @@ class ILP_partitioner(object):
         # constraint 2: not exceed compute resources
         for i in compute_nodes:
             for r in range(len(compute_resources[0])):
-                model += xsum([ xsum(task_requirements[j][v][r]*opt_placement[i][j][v] for v in task_versions[j] ) for j in task_nodes ]) <= compute_resources[i][r]*compute_resource_limits[r]
+                model += xsum([ xsum(task_requirements[j][v][r]*opt_placement[i][j][v] for v in task_versions[j] ) for j in task_nodes ]) <= (compute_resources*compute_resource_limits).astype(np.int)[i][r]
                 
 
         # constraint 3: not exceed connection resources
