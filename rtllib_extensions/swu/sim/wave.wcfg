@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wave_config>
+   <wave_state>
+   </wave_state>
+   <db_ref_list>
+      <db_ref path="xil_defaultlib.tb.wdb" id="1">
+         <top_modules>
+            <top_module name="tb" />
+         </top_modules>
+      </db_ref>
+   </db_ref_list>
+   <zoom_setting>
+      <ZoomStartTime time="0fs"></ZoomStartTime>
+      <ZoomEndTime time="3fs"></ZoomEndTime>
+      <Cursor1Time time="0fs"></Cursor1Time>
+   </zoom_setting>
+   <column_width_setting>
+      <NameColumnWidth column_width="276"></NameColumnWidth>
+      <ValueColumnWidth column_width="104"></ValueColumnWidth>
+   </column_width_setting>
+   <WVObjectSize size="26" />
+   <wvobject type="logic" fp_name="/tb/clk">
+      <obj_property name="ElementShortName">clk</obj_property>
+      <obj_property name="ObjectShortName">clk</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb/resetn">
+      <obj_property name="ElementShortName">resetn</obj_property>
+      <obj_property name="ObjectShortName">resetn</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb/ip_axis_tdata">
+      <obj_property name="ElementShortName">ip_axis_tdata[23:0]</obj_property>
+      <obj_property name="ObjectShortName">ip_axis_tdata[23:0]</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb/ip_axis_tvalid">
+      <obj_property name="ElementShortName">ip_axis_tvalid</obj_property>
+      <obj_property name="ObjectShortName">ip_axis_tvalid</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb/ip_axis_tready">
+      <obj_property name="ElementShortName">ip_axis_tready</obj_property>
+      <obj_property name="ObjectShortName">ip_axis_tready</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb/op_axis_tdata">
+      <obj_property name="ElementShortName">op_axis_tdata[7:0]</obj_property>
+      <obj_property name="ObjectShortName">op_axis_tdata[7:0]</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb/op_axis_tready">
+      <obj_property name="ElementShortName">op_axis_tready</obj_property>
+      <obj_property name="ObjectShortName">op_axis_tready</obj_property>
+   </wvobject>
+   <wvobject type="logic" fp_name="/tb/op_axis_tvalid">
+      <obj_property name="ElementShortName">op_axis_tvalid</obj_property>
+      <obj_property name="ObjectShortName">op_axis_tvalid</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb/i">
+      <obj_property name="ElementShortName">i[31:0]</obj_property>
+      <obj_property name="ObjectShortName">i[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb/MMV_IN">
+      <obj_property name="ElementShortName">MMV_IN[31:0]</obj_property>
+      <obj_property name="ObjectShortName">MMV_IN[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb/MMV_OUT">
+      <obj_property name="ElementShortName">MMV_OUT[31:0]</obj_property>
+      <obj_property name="ObjectShortName">MMV_OUT[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb/SIMD">
+      <obj_property name="ElementShortName">SIMD[31:0]</obj_property>
+      <obj_property name="ObjectShortName">SIMD[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb/IP_PRECISION">
+      <obj_property name="ElementShortName">IP_PRECISION[31:0]</obj_property>
+      <obj_property name="ObjectShortName">IP_PRECISION[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb/STRIDE">
+      <obj_property name="ElementShortName">STRIDE[31:0]</obj_property>
+      <obj_property name="ObjectShortName">STRIDE[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb/IFMChannels">
+      <obj_property name="ElementShortName">IFMChannels[31:0]</obj_property>
+      <obj_property name="ObjectShortName">IFMChannels[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb/KERNEL_HEIGHT">
+      <obj_property name="ElementShortName">KERNEL_HEIGHT[31:0]</obj_property>
+      <obj_property name="ObjectShortName">KERNEL_HEIGHT[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb/KERNEL_WIDTH">
+      <obj_property name="ElementShortName">KERNEL_WIDTH[31:0]</obj_property>
+      <obj_property name="ObjectShortName">KERNEL_WIDTH[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb/RAM_STYLE">
+      <obj_property name="ElementShortName">RAM_STYLE[31:0]</obj_property>
+      <obj_property name="ObjectShortName">RAM_STYLE[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb/IFMWidth">
+      <obj_property name="ElementShortName">IFMWidth[31:0]</obj_property>
+      <obj_property name="ObjectShortName">IFMWidth[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb/IFMHeight">
+      <obj_property name="ElementShortName">IFMHeight[31:0]</obj_property>
+      <obj_property name="ObjectShortName">IFMHeight[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb/PADDING_WIDTH">
+      <obj_property name="ElementShortName">PADDING_WIDTH[31:0]</obj_property>
+      <obj_property name="ObjectShortName">PADDING_WIDTH[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb/PADDING_HEIGHT">
+      <obj_property name="ElementShortName">PADDING_HEIGHT[31:0]</obj_property>
+      <obj_property name="ObjectShortName">PADDING_HEIGHT[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb/OFMWidth">
+      <obj_property name="ElementShortName">OFMWidth[31:0]</obj_property>
+      <obj_property name="ObjectShortName">OFMWidth[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb/OFMHeight">
+      <obj_property name="ElementShortName">OFMHeight[31:0]</obj_property>
+      <obj_property name="ObjectShortName">OFMHeight[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb/BUFFER_SIZE">
+      <obj_property name="ElementShortName">BUFFER_SIZE[31:0]</obj_property>
+      <obj_property name="ObjectShortName">BUFFER_SIZE[31:0]</obj_property>
+   </wvobject>
+   <wvobject type="array" fp_name="/tb/OFMDIM_MOD_MMV">
+      <obj_property name="ElementShortName">OFMDIM_MOD_MMV[31:0]</obj_property>
+      <obj_property name="ObjectShortName">OFMDIM_MOD_MMV[31:0]</obj_property>
+   </wvobject>
+</wave_config>
