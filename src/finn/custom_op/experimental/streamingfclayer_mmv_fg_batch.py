@@ -34,7 +34,7 @@ import numpy as np
 import subprocess
 from onnx import TensorProto, helper
 from finn.core.datatype import DataType
-from finn.custom_op.fpgadataflow.hlscustomop import HLSCustomOp
+from finn.custom_op.fpgadataflow.streamingfclayer_batch import StreamingFCLayer_Batch
 from finn.util.basic import (
     make_build_dir,
     interleave_matrix_outer_dim_from_partitions,
@@ -57,7 +57,7 @@ import textwrap
 # output 0 is the output tensor, shape (.., o_size) = (..., MH)
 # the ... here can be any shape (representing groups of vectors)
 
-class StreamingFCLayer_Batch(HLSCustomOp):
+class StreamingFCLayer_MMV_FG_Batch(StreamingFCLayer_Batch):
     """Class that corresponds to finn-hls StreamingFCLayer_Batch function."""
 
     def __init__(self, onnx_node):
@@ -66,63 +66,12 @@ class StreamingFCLayer_Batch(HLSCustomOp):
 
     def get_nodeattr_types(self):
         my_attrs = {
-            "PE": ("i", True, 0),
-            "SIMD": ("i", True, 0),
-            "MW": ("i", True, 0),
-            "MH": ("i", True, 0),
-            "resType": ("s", False, "lut", {"auto", "lut", "dsp"}),
-            "ActVal": ("i", False, 0),
-            # FINN DataTypes for inputs, weights, outputs
-            "inputDataType": ("s", True, ""),
-            "weightDataType": ("s", True, ""),
-            "outputDataType": ("s", True, ""),
-            # FINN DataType for accumulator -- auto-computed and updated
-            "accDataType": ("s", False, "INT32"),
-            # use xnor-popcount for binary weights/inputs, thus treating them
-            # as bipolar
-            "binaryXnorMode": ("i", False, 0, {0, 1}),
-            # no-activation mode (produce accumulators)
-            "noActivation": ("i", False, 0, {0, 1}),
-            # number of input vectors, examples:
-            # [1] is a single vector (like a FC layer with batch=1)
-            # [4] is four vectors (like a FC layer with batch=4)
-            # [1, 4, 4] is four * four vectors (like a conv layer with batch=1)
-            "numInputVectors": ("ints", False, [1]),
-            # memory mode for the FC weights
-            # const -- embedded weights, default, long compile/synth times
-            # decoupled -- streaming weights with weight streamer packaged inside IP
-            # external -- streaming weights with external streamer
-            "mem_mode": ("s", False, "const", {"const", "decoupled", "external"}),
-            # FPGA resource type for memories in decoupled mode
-            # auto -- let Vivado decide
-            # block -- use BRAM
-            # distributed -- use LUTRAM
-            # ultra -- use UltraRAM (URAM), must have runtime_writeable_weights=1
-            # see also https://www.xilinx.com/support/answers/38070.html
-            "ram_style": (
-                "s",
-                False,
-                "auto",
-                {"auto", "block", "distributed", "ultra"},
-            ),
             "ibuf_ram_style": (
                 "s",
                 False,
                 "auto",
                 {"auto", "block", "distributed", "ultra"},
             ),
-            # (mem_mode = decoupled only) whether weights will be writable through
-            # an AXI-lite interface during runtime
-            # 1 for enabled, 0 for disabled.
-            # see finn-rtllib/memstream/doc/README for more about the memory
-            # address map used for writable weights
-            # IMPORTANT: After using AXI lite to either read or write the weights,
-            # always "flush" the accelerator by first passing a dummy input
-            # vector through the accelerator. This will get rid of any old
-            # weight data from the weight FIFOs.
-            "runtime_writeable_weights": ("i", False, 0, {0, 1}),
-            
-            # to determine hls ip block sizes
             "fine_grained" : ("i", False, 0, {0, 1}),
             "MMV" : ("i", False, 1),
     
@@ -151,94 +100,6 @@ class StreamingFCLayer_Batch(HLSCustomOp):
             pe = self.get_nodeattr("PE")
             return mh // pe
 
-    def make_shape_compatible_op(self, model):
-        oshape = self.get_normal_output_shape()
-        # implement tensor with correct shape
-        values = np.random.randn(*oshape).astype(np.float32)
-        return helper.make_node(
-            "Constant",
-            inputs=[],
-            outputs=[self.onnx_node.output[0]],
-            value=helper.make_tensor(
-                name="const_tensor",
-                data_type=TensorProto.FLOAT,
-                dims=values.shape,
-                vals=values.flatten().astype(float),
-            ),
-        )
-
-    def infer_node_datatype(self, model):
-        node = self.onnx_node
-        idt = model.get_tensor_datatype(node.input[0])
-        if idt != self.get_input_datatype():
-            warn_str = "inputDataType changing for %s: %s -> %s " % (
-                node.name,
-                str(self.get_input_datatype()),
-                str(idt),
-            )
-            warnings.warn(warn_str)
-        self.set_nodeattr("inputDataType", idt.name)
-        # set output datatype from property
-        odt = self.get_output_datatype()
-        model.set_tensor_datatype(node.output[0], odt)
-
-    def verify_node(self):
-        info_messages = []
-        # verify that "backend" is set to "fpgadataflow"
-        backend_value = self.get_nodeattr("backend")
-        if backend_value == "fpgadataflow":
-            info_messages.append("Attribute backend is set correctly")
-        else:
-            info_messages.append('Attribute backend should be set to "fpgadataflow"')
-
-        # verify that all necessary attributes exist
-        # TODO collect automatically from get_nodeattr_types
-        try:
-            self.get_nodeattr("code_gen_dir_cppsim")
-            self.get_nodeattr("executable_path")
-            self.get_nodeattr("resType")
-            self.get_nodeattr("MW")
-            self.get_nodeattr("MH")
-            self.get_nodeattr("SIMD")
-            self.get_nodeattr("PE")
-            self.get_nodeattr("inputDataType")
-            self.get_nodeattr("weightDataType")
-            self.get_nodeattr("outputDataType")
-            info_messages.append("All necessary attributes exist")
-        except Exception:
-            info_messages.append(
-                """The required StreamingFCLayer attributes do not exist."""
-            )
-
-        # verify the number of inputs depending on noActivation value
-        # check noActivation value to determine the number of inputs
-        no_act = self.get_nodeattr("noActivation")
-
-        if no_act == 1:
-            if len(self.onnx_node.input) == 2:
-                info_messages.append("The number of inputs is correct")
-            else:
-                info_messages.append(
-                    """StreamingFCLayer_Batch needs in no
-                            activation mode 2 inputs (data input and weights)"""
-                )
-        elif no_act == 0:
-            if len(self.onnx_node.input) == 3:
-                info_messages.append("The number of inputs is correct")
-            else:
-                info_messages.append(
-                    """StreamingFCLayer_Batch needs 3 inputs
-                            (data input and weights and threshold values)"""
-                )
-        else:
-            info_messages.append(
-                """noActivation attribute contains {} should
-                be 0 or 1""".format(
-                    no_act
-                )
-            )
-
-        return info_messages
 
     def uram_estimation(self):
         P = self.get_nodeattr("PE")
@@ -394,27 +255,9 @@ class StreamingFCLayer_Batch(HLSCustomOp):
         return int(mult_dsp)
 
     def get_exp_cycles(self):
-        pe = self.get_nodeattr("PE")
-        simd = self.get_nodeattr("SIMD")
-        num_inp_vec = self.get_nodeattr("numInputVectors")
-        mh = self.get_nodeattr("MH")
-        mw = self.get_nodeattr("MW")
-        # since mmv != 1 is not supported yet, we set mmv for now to 1
-        mmv = 1
-        exp_cycles = (mh / pe) * (mw / simd) * np.prod(num_inp_vec) / mmv
-        return int(exp_cycles)
+        mmv = self.get_nodeattr("MMV")
+        return super().get_exp_cycles() // mmv
 
-    def get_input_datatype(self):
-        """Returns FINN DataType of input."""
-        return DataType[self.get_nodeattr("inputDataType")]
-
-    def get_weight_datatype(self):
-        """Returns FINN DataType of weights."""
-        return DataType[self.get_nodeattr("weightDataType")]
-
-    def get_output_datatype(self):
-        """Returns FINN DataType of output."""
-        return DataType[self.get_nodeattr("outputDataType")]
 
     def get_instream_width(self):
         i_bits = self.get_input_datatype().bitwidth()
@@ -1712,11 +1555,6 @@ class StreamingFCLayer_Batch(HLSCustomOp):
                   cmd.append("create_bd_cell -type ip -vlnv user.org:user:extend_broadcaster2:1.0 %s/axis_broadcaster_input_%d" % (node_name, mmv))
                   cmd.append("set_property -dict [list CONFIG.C_AXIS_TDATA_WIDTH {%d} CONFIG.C_NUM_MI_SLOTS {%s}] [get_bd_cells %s/axis_broadcaster_input_%d]" % (self.get_instream_width_padded(), pe, node_name, mmv))
 
-                  ## instantiate streamingFIFO and set depth and bitwidth
-                  #cmd.append("create_bd_cell -type ip -vlnv xilinx.com:ip:axis_data_fifo:2.0 %s/axis_fifo_mmv_%d" % (node_name, mmv))
-                  #cmd.append("set_property -dict [list CONFIG.TDATA_NUM_BYTES {%d} CONFIG.FIFO_DEPTH {16}] [get_bd_cells %s/axis_fifo_mmv_%d]" % (self.get_outstream_width()//8, node_name, mmv))
-
-
                   # connect input splitter outputs to input buffer
                   cmd.append("connect_bd_intf_net [get_bd_intf_pins %s/axis_splitter_inputs_mmv/m_axis_%02d] " 
                              "[get_bd_intf_pins %s/inputbuf_%d/s_axis]" 
@@ -1754,45 +1592,8 @@ class StreamingFCLayer_Batch(HLSCustomOp):
                         % (node_name, mmv, node_name, mmv)
                      )
 
-                     ## connect output of combiner to fifos
-                     #cmd.append(
-                     #  "connect_bd_intf_net [get_bd_intf_pins %s/axis_combiner_output_%d/m_axis] "
-                     #  "[get_bd_intf_pins %s/axis_fifo_mmv_%d/S_AXIS]"
-                     #  %(node_name, mmv, node_name, mmv)
-                     #)
-
-
-                     ## connect output of fifos to switch
-                     #cmd.append(
-                     #  "connect_bd_intf_net [get_bd_intf_pins %s/axis_fifo_mmv_%d/M_AXIS] "
-                     #  "[get_bd_intf_pins %s/axis_switch_mmv/S%02d_AXIS]"
-                     #  % (node_name, mmv, node_name, mmv)
-                     #)
-                     ## connect output of fifos to final combiner
-                     #cmd.append(
-                     #  "connect_bd_intf_net [get_bd_intf_pins %s/axis_fifo_mmv_%d/M_AXIS] "
-                     #  "[get_bd_intf_pins %s/axis_combiner_mmv/s_axis_%02d]"
-                     #  % (node_name, mmv, node_name, mmv)
-                     #)
-
                      
                      if mmv == 0:
-                        ## final switch
-                        #cmd.append(
-                        #   "connect_bd_net [get_bd_pins %s/axis_combiner_mmv/m_axis_tdata] "
-                        #   "[get_bd_pins %s/axis_switch_mmv/s_axis_tdata]" 
-                        #   % (node_name, node_name)
-                        #)
-                        #cmd.append(
-                        #   "connect_bd_net [get_bd_pins %s/axis_combiner_mmv/m_axis_tvalid] "
-                        #   "[get_bd_pins %s/axis_switch_mmv/s_axis_tvalid]" 
-                        #    % (node_name, node_name)
-                        #)
-                        #cmd.append(
-                        #   "connect_bd_net [get_bd_pins %s/axis_combiner_mmv/m_axis_tready] "
-                        #   "[get_bd_pins %s/axis_switch_mmv/s_axis_tready]" 
-                        #   % (node_name, node_name)
-                        #) 
                         cmd.append(
                            "connect_bd_intf_net [get_bd_intf_pins %s/axis_combiner_mmv/m_axis] "
                            "[get_bd_intf_pins %s/%s] " 
@@ -1842,106 +1643,7 @@ class StreamingFCLayer_Batch(HLSCustomOp):
                     % (node_name, clk_name, node_name, mmv)
                   ) 
 
-                  ##connect clk and reset - fifo 
-                  #cmd.append(
-                  #  "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/axis_fifo_mmv_%d/s_axis_aresetn]"
-                  #  %(node_name, rst_name, node_name, mmv)
-                  #)
-                  #cmd.append(
-                  #  "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/axis_fifo_mmv_%d/s_axis_aclk]"
-                  #  % (node_name, clk_name, node_name, mmv)
-                  #)
 
-                              
-
-            else:
-
-               cmd.append(
-                  "create_bd_cell -type ip -vlnv %s /%s/%s"
-                  % (strm_vlnv, node_name, strm_inst)
-               )
-               cmd.append(
-                  "set_property -dict [list "
-                  "CONFIG.NSTREAMS {1} "
-                  "CONFIG.MEM_DEPTH {%d} "
-                  "CONFIG.MEM_WIDTH {%d} "
-                  "CONFIG.MEM_INIT {%s} "
-                  "CONFIG.RAM_STYLE {%s} "
-                  "CONFIG.STRM0_DEPTH {%d} "
-                  "CONFIG.STRM0_WIDTH {%d} "
-                  "CONFIG.STRM0_OFFSET {0} "
-                  "] [get_bd_cells /%s/%s]"
-                  % (
-                    self.calc_wmem(),
-                    self.get_weightstream_width_padded(),
-                    self.get_nodeattr("code_gen_dir_ipgen") + "/",
-                    self.get_nodeattr("ram_style"),
-                    self.calc_wmem(),
-                    self.get_weightstream_width_padded(),
-                    node_name,
-                    strm_inst,
-                    )
-                )
-               cmd.append(
-                  "create_bd_cell -type ip -vlnv %s /%s/%s"
-                  % (self.get_nodeattr("ip_vlnv"), node_name, node_name)
-                )
-
-               cmd.append(
-                  "connect_bd_intf_net [get_bd_intf_pins %s/%s/m_axis_0] "
-                  "[get_bd_intf_pins %s/%s/weights_V_V]"
-                  % (node_name, strm_inst, node_name, node_name)
-                )
-
-               cmd.append(
-                  "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/%s/%s]"
-                  % (node_name, rst_name, node_name, node_name, rst_name)
-                )
-               cmd.append(
-                  "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/%s/%s]"
-                  % (node_name, clk_name, node_name, node_name, clk_name)
-                )
-               cmd.append(
-                  "connect_bd_intf_net [get_bd_intf_pins %s/%s] "
-                  "[get_bd_intf_pins %s/%s/%s]"
-                  % (node_name, din_name, node_name, node_name, din_name)
-                )
-               cmd.append(
-                  "connect_bd_intf_net [get_bd_intf_pins %s/%s] "
-                  "[get_bd_intf_pins %s/%s/%s]"
-                  % (node_name, dout_name, node_name, node_name, dout_name)
-               )
-
-                
-               # streamer reset and clock
-               cmd.append(
-                    "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/%s/aresetn]"
-                    % (node_name, rst_name, node_name, strm_inst)
-               )
-               cmd.append(
-                    "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/%s/aclk]"
-                    % (node_name, clk_name, node_name, strm_inst)
-               )
-
-
-
-
-            if runtime_writable:
-
-                # expose axi lite interface for writeable weights
-                axilite_name = self.get_verilog_top_module_intf_names()["axilite"][0]
-                cmd.append(
-                    "create_bd_intf_pin -mode Slave "
-                    "-vlnv xilinx.com:interface:aximm_rtl:1.0 /%s/%s"
-                    % (node_name, axilite_name)
-                )
-                cmd.append(
-                    "connect_bd_intf_net [get_bd_intf_pins %s/%s] "
-                    "[get_bd_intf_pins %s/%s/%s]"
-                    % (node_name, axilite_name, node_name, strm_inst, axilite_name)
-                )
-                # TODO calculate and pass in segment size here
-                cmd.append("assign_bd_address")
             cmd.append("save_bd_design")
         elif mem_mode == "const":
             # base class impl sufficient for const mode
@@ -1962,26 +1664,3 @@ class StreamingFCLayer_Batch(HLSCustomOp):
                 intf_names["axilite"] = ["s_axilite"]
         return intf_names
 
-    def get_op_and_param_counts(self):
-        in_features = self.get_nodeattr("MW")
-        out_features = self.get_nodeattr("MH")
-        weight_bits = self.get_weight_datatype().bitwidth()
-        inp_bits = self.get_input_datatype().bitwidth()
-        num_inp_vec = self.get_nodeattr("numInputVectors")
-        num_repetitions = int(np.prod(num_inp_vec))
-        mac_count = in_features * out_features * num_repetitions
-        # cannonicalize op type: highest bitwidth operand first s.t.
-        # e.g. mac_8bx4b and mac_4bx8b don't appear as two different op types
-        bw1 = min(inp_bits, weight_bits)
-        bw2 = max(inp_bits, weight_bits)
-        mac_op_type = "op_mac_%dbx%db" % (bw1, bw2)
-        weight_param_type = "param_weight_%db" % (weight_bits)
-        weight_count = in_features * out_features
-        ret_dict = {mac_op_type: mac_count, weight_param_type: weight_count}
-        if self.get_nodeattr("noActivation") == 0:
-            tdt = DataType[self.get_nodeattr("accDataType")]
-            thres_bits = tdt.bitwidth()
-            thres_param_type = "param_threshold_%db" % (thres_bits)
-            thres_count = out_features
-            ret_dict[thres_param_type] = thres_count
-        return ret_dict
