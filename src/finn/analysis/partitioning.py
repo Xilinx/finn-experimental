@@ -584,7 +584,7 @@ def partition(model, target_clk_ns, target_platform="U250", ndevices=1, nreplica
         inst = getCustomOp(model.graph.node[edge[0]])
         nwires = inst.get_outstream_width_padded()
         if inst.get_exp_cycles() == 0:
-            nbps = fp_pfm.eth_gbps
+            nbps = int(10**9 * fp_pfm.eth_gbps)
         else:
             nbps = int(10**9 * (inst.get_outstream_width_padded() * inst.get_number_output_values()) / (target_clk_ns * inst.get_exp_cycles()))
         edge_costs.append((nwires, nbps))
