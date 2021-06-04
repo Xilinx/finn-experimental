@@ -27,6 +27,12 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from finn.custom_op.experimental.convdoublepacked_batch import ConvDoublePacked_Batch
+from finn.custom_op.experimental.convolutioninputgenerator_mmv import ConvolutionInputGenerator_MMV
+from finn.custom_op.experimental.streamingfclayer_mmv_fg_batch import StreamingFCLayer_MMV_FG_Batch
+#from finn.custom_op.experimental.thresholding_mmv_batch import Thresholding_MMV_Batch
 
 custom_op = dict()
 custom_op["ConvDoublePacked_Batch"] = ConvDoublePacked_Batch
+custom_op["ConvolutionInputGenerator_MMV"] = ConvolutionInputGenerator_MMV
+custom_op["StreamingFCLayer_MMV_FG_Batch"] = StreamingFCLayer_MMV_FG_Batch
+#custom_op["Thresholding_MMV_Batch"] = Thresholding_MMV_Batch

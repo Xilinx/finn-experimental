@@ -32,27 +32,14 @@ import math
 import numpy as np
 
 from finn.core.datatype import DataType
-from finn.custom_op.fpgadataflow.convolutioninputgenerator import ConvolutionInputGenerator
+from finn.custom_op.fpgadataflow.hlscustomop import HLSCustomOp
 from finn.custom_op.general.im2col import compute_conv_output_dim
 from onnx import TensorProto, helper
-from finn.util.data_packing import npy_to_rtlsim_input, rtlsim_output_to_npy
 from finn.util.basic import (
     roundup_to_integer_multiple,
 )
-# ONNX i/o tensor shape assumptions for ConvolutionInputGenerator:
-# input 0 is the input tensor, shape NHWC = (1, IFMDim, IFMDim, IFMChannels)
-# output 0 is the output tensor, shape NHWC:
-#     = (1, OFMDim, OFMDim, (ConvKernelDim^2)*IFMChannels)
 
-# note: the actual data layout produced by the hlslib kernels is different
-# for depthwise and non-depthwise ops.
-# * non-depthwise SWG: (1, OFMDim, OFMDim, K, K, IFMChannels/SIMD, SIMD)
-# * depthwise SWG: (1, OFMDim, OFMDim, IFMChannels/SIMD, K, K, SIMD)
-# see test_fpgadataflow_slidingwindow.py for an example of how to transform
-# between the two layouts
-
-
-class ConvolutionInputGenerator_MMV(ConvolutionInputGenerator):
+class ConvolutionInputGenerator_MMV(HLSCustomOp):
     """Class that extends ConvolutionInputGenerator with MMV support during stitching."""
 
     def __init__(self, onnx_node):
@@ -60,16 +47,64 @@ class ConvolutionInputGenerator_MMV(ConvolutionInputGenerator):
 
     def get_nodeattr_types(self):
         my_attrs = {
+            "ConvKernelDim": ("ints", True, []),  # [H, W] = [Y, X]
+            "IFMChannels": ("i", True, 0),
+            "IFMDim": ("ints", True, []),  # [H, W] = [Y, X]
+            "OFMDim": ("ints", True, []),  # [H, W] = [Y, X]
+            "SIMD": ("i", True, 0),
+            "Stride": ("ints", True, [1, 1]),  # [H, W] = [Y, X]
+            # note: only dilation=1 supported for now
+            "Dilation": ("ints", True, [1, 1]),  # [H, W] = [Y, X]
+            # FINN DataTypes for inputs, weights, outputs
+            "inputDataType": ("s", True, ""),
+            "outputDataType": ("s", True, ""),
+            "depthwise": ("i", False, 0, {0, 1}),
             "MMVO" : ("i", False, 1),
             "MMVI" : ("i", False, 1),
+            # total padding (per dimension) to apply
+            # NOTE: Current padding scheme that is applied tries to pad the same
+            # amount of zeros in front and behind the image for each dimension.
+            # As an example, a padding scheme such as [1, x, 3, x] is equal
+            # to [2, x, 2, x]
+            "Padding": (
+                "ints",
+                True,
+                [1, 1, 1, 1],
+            ),  # [H_begin, W_begin, H_end, W_end] = [Y_begin, X_begin, Y_end, X_end]
+            # controls distribution of padded pixels
+            # in case of uneven padding -- see FMPadding fxn
+            # in hlslib
+            "PaddingStyle": ("i", False, 2, {2, 1}),
         }
         my_attrs.update(super().get_nodeattr_types())
         return my_attrs
 
-    def get_number_output_values(self):
-        folded_oshape = self.get_folded_output_shape()
-        num_output_elems = np.prod(folded_oshape[:-1])
-        return num_output_elems
+    def get_instream_width(self):
+        """Returns stream width, input and output stream width are equal for
+        the sliding window function"""
+        ibits = self.get_input_datatype().bitwidth()
+        simd = self.get_nodeattr("SIMD")
+        immv = self.get_nodeattr("MMVI")
+        in_width = simd * ibits * immv
+        return in_width
+
+    def get_outstream_width(self):
+        """Returns stream width, input and output stream width are equal for
+        the sliding window function, so the function to determine the input
+        stream width can be reused."""
+        ibits = self.get_input_datatype().bitwidth()
+        simd = self.get_nodeattr("SIMD")
+        ommv = self.get_nodeattr("MMVO")
+        out_width = simd * ibits * ommv
+        return out_width
+
+    def get_input_datatype(self):
+        """Returns FINN DataType of input."""
+        return DataType[self.get_nodeattr("inputDataType")]
+
+    def get_output_datatype(self):
+        """Returns FINN DataType of output."""
+        return DataType[self.get_nodeattr("outputDataType")]
 
     def get_exp_cycles(self):
         mmvo = self.get_nodeattr("MMVO")
@@ -92,7 +127,7 @@ class ConvolutionInputGenerator_MMV(ConvolutionInputGenerator):
             ram_luts = int(
                 (k + stride)
                 * (
-                    mmvi * simd *
+                    mmvi * simd
                     * self.get_input_datatype().bitwidth()
                     * math.ceil(ifm_dim * ifm_ch / simd / mmvi / 64)
                 )
@@ -179,3 +214,50 @@ class ConvolutionInputGenerator_MMV(ConvolutionInputGenerator):
         cmd.append("connect_bd_intf_net [get_bd_intf_pins %s/%s] [get_bd_intf_pins %s/swu/op_axis]" % (node_name, dout_name, node_name))
         cmd.append("save_bd_design")
         return cmd
+
+
+    def blackboxfunction(self):
+        pass
+    
+    def dataoutstrm(self):
+        pass
+    
+    def defines(self):
+        pass
+    
+    def docompute(self):
+        pass
+    
+    def global_includes(self):
+        pass
+    
+    def infer_node_datatype(self):
+        pass
+    
+    def make_shape_compatible_op(self):
+        pass
+    
+    def pragmas(self):
+        pass
+    
+    def read_npy_data(self):
+        pass
+    
+    def save_as_npy(self):
+        pass
+    
+    def strm_decl(self):
+        pass
+    
+    def verify_node(self):
+        pass
+
+    def get_number_output_values(self):
+        pass
+
+    def code_generation_ipgen(self, model, fpgapart, clk):
+        pass
+
+    def ipgen_singlenode_code(self):
+        self.set_nodeattr("ipgen_path", self.get_nodeattr("code_gen_dir_ipgen"))
+        self.set_nodeattr("ip_path", self.get_nodeattr("code_gen_dir_ipgen"))
