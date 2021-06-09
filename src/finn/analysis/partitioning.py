@@ -546,7 +546,7 @@ def res_estimation_complete(model, multivariant=True):
 #rel_anchors= [(0,1),]
 #rel_anchors = [(0,-1)]
 
-def partition(model, target_clk_ns, target_platform="U250", ndevices=1, nreplicas=1, abs_anchors=[], rel_anchors=[], timeout=300, multivariant=True, limits=DEFAULT_RES_LIMITS, avg_constraints=DEFAULT_AVG_CONSTRAINTS):
+def partition(model, target_clk_ns, target_platform="U250", ndevices=1, nreplicas=1, abs_anchors=[], rel_anchors=[], timeout=300, multivariant=True, linear_cuts=False, limits=DEFAULT_RES_LIMITS, avg_constraints=DEFAULT_AVG_CONSTRAINTS):
     # get platform
     fp_pfm = platforms[target_platform](ndevices, limits=limits, avg_constraints=avg_constraints)
     #get resources
@@ -568,26 +568,38 @@ def partition(model, target_clk_ns, target_platform="U250", ndevices=1, nreplica
     node_list = [
         n for n in model.graph.node
     ]  # I also need the list to remove the nodes
+    edge_costs = []
+    nbranches = 0
+    max_bps = int(10**9 * fp_pfm.eth_gbps)
+    max_sll = max(max(fp_pfm.sll_count))
     for node_idx, n in enumerate(node_list):
         node_pred = model.find_direct_predecessors(n)
         if node_pred is None:
             # Will also eliminate nodes that are floating around for some reason
             continue
-
+        # save edge information
         node_dependencies = [node_list.index(pred) for pred in node_pred]
         for dep in node_dependencies:
+            # connectivity information
             graph_edges.append((dep, node_idx))
-        
-    #traverse the list of dependencies and for every source node, get the number of wires and the throughput in bps
-    edge_costs = []
-    for edge in graph_edges:
-        inst = getCustomOp(model.graph.node[edge[0]])
-        nwires = inst.get_outstream_width_padded()
-        if inst.get_exp_cycles() == 0:
-            nbps = int(10**9 * fp_pfm.eth_gbps)
-        else:
-            nbps = int(10**9 * (inst.get_outstream_width_padded() * inst.get_number_output_values()) / (target_clk_ns * inst.get_exp_cycles()))
-        edge_costs.append((nwires, nbps))
+            # edge weights
+            inst = getCustomOp(model.graph.node[dep])
+            if nbranches > 0:
+                nwires = max_sll + 1
+            else:
+                nwires = inst.get_outstream_width_padded()
+            if nbranches > 0 or inst.get_exp_cycles() == 0:
+                nbps = max_bps
+            else:
+                nbps = int(10**9 * (inst.get_outstream_width_padded() * inst.get_number_output_values()) / (target_clk_ns * inst.get_exp_cycles()))
+            edge_costs.append((nwires, nbps))
+        # keep track of how many branches the model has at any point
+        # useful if we want to avoid cutting in nonlinear segments
+        if linear_cuts:
+            if n.op_type in ["DuplicateStreams_Batch"]:
+                nbranches += 1
+            elif n.op_type in ["AddStreams_Batch"]:
+                nbranches -= 1
 
     # replicate the net as required
     task_requirements, graph_edges, edge_costs, abs_anchors, rel_anchors = replicate_net(task_requirements, graph_edges, edge_costs, abs_anchors, rel_anchors, slr_per_device=fp_pfm.nslr, devices=fp_pfm.ndevices, replicas=nreplicas)
