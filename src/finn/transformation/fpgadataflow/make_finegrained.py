@@ -100,7 +100,8 @@ class MakeFinegrained(Transformation):
                     graph.node.remove(producer)
                 return (model, True)
 
-            elif n.op_type == "StreamingFCLayer_Batch":
+            elif n.op_type == "StreamingFCLayer_Batch" or n.op_type == "Vector_Vector_Activate_Batch":
+                is_vvau = (n.op_type == "Vector_Vector_Activate_Batch")
                 node_input = n.input[0]
                 weight_input = n.input[1]
                 node_output = n.output[0]
@@ -120,7 +121,7 @@ class MakeFinegrained(Transformation):
                     domain="finn.custom_op.experimental",
                     backend="fpgadataflow",
                     PE = getCustomOp(n).get_nodeattr("PE"),
-                    SIMD = getCustomOp(n).get_nodeattr("SIMD"),
+                    SIMD = 1 if is_vvau else getCustomOp(n).get_nodeattr("SIMD"),
                     MW = getCustomOp(n).get_nodeattr("MW"),
                     MH = getCustomOp(n).get_nodeattr("MH"),
                     resType = getCustomOp(n).get_nodeattr("resType"),
@@ -135,6 +136,7 @@ class MakeFinegrained(Transformation):
                     ram_style = getCustomOp(n).get_nodeattr("ram_style"),
                     ibuf_ram_style = getCustomOp(n).get_nodeattr("ram_style"),
                     MMV = 1,
+                    VVAU = 1 if is_vvau else 0,
                 )
                 graph.node.insert(node_ind, new_node)
                 # remove old nodes

@@ -47,6 +47,9 @@ from finn.util.data_packing import (
     rtlsim_output_to_npy,
     pack_innermost_dim_as_hex_string,
 )
+from finn.util.ipi_axis_stitch import (
+    axis_gather_bcast_scatter,
+)
 import textwrap
 
 class StreamingFCLayer_MMV_FG_Batch(HLSCustomOp):
@@ -99,7 +102,7 @@ class StreamingFCLayer_MMV_FG_Batch(HLSCustomOp):
                 {"auto", "block", "distributed", "ultra"},
             ),
             "MMV" : ("i", False, 1),
-    
+            "VVAU": ("i", False, 0, {0, 1}),
         }
         my_attrs.update(super().get_nodeattr_types())
         return my_attrs
@@ -501,36 +504,6 @@ class StreamingFCLayer_MMV_FG_Batch(HLSCustomOp):
                     for val in weight_stream:
                         f.write(val + "\n")
 
-                ##
-                if self.get_weightstream_width() > 40000:
-                    # TODO create a function for finding a suitable wtrm factor
-                    wstrm_factor = 2
-                    split_weightstream_width=self.get_weightstream_width()//wstrm_factor
-                    split_weightstream_width_padded=roundup_to_integer_multiple(split_weightstream_width, 4)
-
-                    assert pe%wstrm_factor==0 ,"number of weightstreams must be divisible by pe"
-
-                    split_array=np.split(weight_tensor_pe_flipped2, wstrm_factor, axis=-1)
-                    split_array.reverse()
-                    head, tail=os.path.split(self.get_nodeattr("code_gen_dir_ipgen"))
-                    for w in range(wstrm_factor):
-                        split_array_hex = pack_innermost_dim_as_hex_string(
-                           split_array[w], export_wdt, split_weightstream_width_padded, prefix=""
-                        )
-                        code_gen_dir_name =  os.environ["FINN_BUILD_DIR"] + "/" + tail + "/wstrm" + str(w)
-                        if not os.path.isdir(code_gen_dir_name):
-                           os.makedirs(code_gen_dir_name)
-                        
-                        weight_file_name = code_gen_dir_name + "/memblock_0.dat"
-                        split_stream = split_array_hex.flatten()
-                        split_stream = split_stream.copy()
-                        with open(weight_file_name, "w") as f:
-                          for val in split_stream:
-                              f.write(val + "\n")
-                              
-                else:
-                    wstrm_factor = 1
-
     def generate_params(self, model, path):
         mem_mode = self.get_nodeattr("mem_mode")
         code_gen_dir = path
@@ -765,366 +738,257 @@ class StreamingFCLayer_MMV_FG_Batch(HLSCustomOp):
         )
         self.code_gen_dict["$PRAGMAS$"].append(
             "#pragma HLS stream depth=8 variable=weights"
-        )
-    
-    def weight_clk_and_reset(self, cmd, w, mmv):
-        node_name = self.onnx_node.name
-        clk_name = self.get_verilog_top_module_intf_names()["clk"][0]
-        rst_name = self.get_verilog_top_module_intf_names()["rst"][0]
-        dout_name = self.get_verilog_top_module_intf_names()["m_axis"][0]
-        din_name = self.get_verilog_top_module_intf_names()["s_axis"][0]
-        strm_inst = node_name + "_wstrm"
-        # 2. weight broadcaster reset and clock
-        if mmv == 0:
-            cmd.append(
-                "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/axis_broadcaster_weight_mmv_%d/aresetn]"
-                % (node_name, rst_name, node_name, w)
-            )
-            cmd.append(
-                "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/axis_broadcaster_weight_mmv_%d/aclk]"
-                % (node_name, clk_name, node_name, w)
-            )
-
-        #streamer reset and clock
-        cmd.append(
-            "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/%s_%d/aresetn]"
-            % (node_name, rst_name, node_name, strm_inst, w)
-        )
-        cmd.append(
-            "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/%s_%d/aclk]"
-            % (node_name, clk_name, node_name, strm_inst, w)
-        ) 
-
-        # connect clk and reset - weight_splitter
-        cmd.append(
-            "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/axis_weight_splitter_%d_%d/aresetn]"
-            % (node_name, rst_name, node_name, mmv, w)
-        )
-        cmd.append(
-            "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/axis_weight_splitter_%d_%d/aclk]"
-            % (node_name, clk_name, node_name, mmv, w)
-        )
-        return cmd
-
-    def instantiate_initial_mmv_blocks(self, cmd):
-        mmv_value = self.get_nodeattr("MMV")
-        node_name = self.onnx_node.name
-        clk_name = self.get_verilog_top_module_intf_names()["clk"][0]
-        rst_name = self.get_verilog_top_module_intf_names()["rst"][0]
-        dout_name = self.get_verilog_top_module_intf_names()["m_axis"][0]
-        din_name = self.get_verilog_top_module_intf_names()["s_axis"][0]
-        # split inputs to mmv broadcaster
-        cmd.append(
-            "create_bd_cell -type ip -vlnv user.org:user:axis_split_core:1.0 %s/axis_splitter_inputs_mmv" 
-            % (node_name)
-        )
-        cmd.append(
-            "set_property -dict [list CONFIG.S_AXIS_TDATA_WIDTH_PAD {%d} \
-                                        CONFIG.C_AXIS_TDATA_WIDTH {%d} \
-                                        CONFIG.M_AXIS_TDATA_WIDTH_PAD {%d} \
-                                        CONFIG.C_NUM_MI_SLOTS {%d} \
-                ]\
-                [get_bd_cells %s/axis_splitter_inputs_mmv]" 
-                % (roundup_to_integer_multiple(self.get_instream_width() * mmv_value, 8), 
-                self.get_instream_width() * mmv_value, 
-                self.get_instream_width(), 
-                mmv_value, 
-                node_name)
-        ) 
-
-        # clock and reset axis splitter
-
-        cmd.append(
-            "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/axis_splitter_inputs_mmv/aresetn]"
-            % (node_name, rst_name, node_name)
-        )
-        cmd.append(
-            "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/axis_splitter_inputs_mmv/aclk]"
-            % (node_name, clk_name, node_name)
-        )
-
-        # connect input of block to input splitter mmv
-        cmd.append(
-            "connect_bd_intf_net [get_bd_intf_pins %s/%s] [get_bd_intf_pins %s/axis_splitter_inputs_mmv/s_axis]" 
-            % (node_name, din_name, node_name)
-        )
-
-        if self.get_nodeattr("MMV") > 1:
-            # create combiner before giving it to the final interconnect
-            cmd.append(
-                "create_bd_cell -type ip -vlnv user.org:user:axis_combiner_v1_1_19_top:1.0 %s/axis_combiner_mmv" 
-                % (node_name)
-            )
-            cmd.append(
-                "set_property -dict [list CONFIG.C_AXIS_TDATA_WIDTH {%d} \
-                                        CONFIG.C_AXIS_SIGNAL_SET {0x00000003} \
-                                        CONFIG.C_NUM_SI_SLOTS {%d} \
-                                    ] \
-                                    [get_bd_cells %s/axis_combiner_mmv]" 
-                % (self.get_outstream_width(), mmv_value, node_name)
-            ) 
-            cmd.append(
-                "create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 %s/xlconstant_mmv" 
-                % (node_name)
-            )
-            cmd.append(
-                "set_property -dict [list CONFIG.CONST_WIDTH {%d} CONFIG.CONST_VAL {0}] [get_bd_cells %s/xlconstant_mmv]"
-                % (mmv_value, node_name)
-            )
-            cmd.append(
-                "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/axis_combiner_mmv/aresetn]"
-                % (node_name, rst_name, node_name)
-            )
-            cmd.append(
-                "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/axis_combiner_mmv/aclk]"
-                % (node_name, clk_name, node_name)
-            ) 
-        return cmd       
+        )    
 
     def code_generation_ipi(self):
         cmd = []
-        # add streamer if needed
-        mem_mode = self.get_nodeattr("mem_mode")
-        if mem_mode == "decoupled":
-            pe = self.get_nodeattr("PE")
-            neuron_fold = int(self.get_nodeattr("MH") // self.get_nodeattr("PE"))
-            synapse_fold = int(self.get_nodeattr("MW") // self.get_nodeattr("SIMD"))
-            simd = self.get_nodeattr("SIMD")
-            wp = self.get_weight_datatype().bitwidth()
-            node_name = self.onnx_node.name
 
-            # create a hierarchy for this layer, with the same port names
-            clk_name = self.get_verilog_top_module_intf_names()["clk"][0]
-            rst_name = self.get_verilog_top_module_intf_names()["rst"][0]
-            dout_name = self.get_verilog_top_module_intf_names()["m_axis"][0]
-            din_name = self.get_verilog_top_module_intf_names()["s_axis"][0]
-            cmd.append("create_bd_cell -type hier %s" % node_name)
-            cmd.append("create_bd_pin -dir I -type clk /%s/%s" % (node_name, clk_name))
-            cmd.append("create_bd_pin -dir I -type rst /%s/%s" % (node_name, rst_name))
-            cmd.append(
-                "create_bd_intf_pin -mode Master "
-                "-vlnv xilinx.com:interface:axis_rtl:1.0 /%s/%s"
-                % (node_name, dout_name)
-            )
+        pe = self.get_nodeattr("PE")
+        mmv = self.get_nodeattr("MMV")
+        simd = self.get_nodeattr("SIMD")
+        neuron_fold = int(self.get_nodeattr("MH") // pe)
+        synapse_fold = int(self.get_nodeattr("MW") // simd)
+        wp = self.get_weight_datatype().bitwidth()
+        node_name = self.onnx_node.name
+
+        # create a hierarchy for this layer, with the same port names
+        clk_name = self.get_verilog_top_module_intf_names()["clk"][0]
+        rst_name = self.get_verilog_top_module_intf_names()["rst"][0]
+        dout_name = self.get_verilog_top_module_intf_names()["m_axis"][0][0]
+        din_name = self.get_verilog_top_module_intf_names()["s_axis"][0][0]
+        cmd.append("create_bd_cell -type hier %s" % node_name)
+        cmd.append("create_bd_pin -dir I -type clk /%s/%s" % (node_name, clk_name))
+        cmd.append("create_bd_pin -dir I -type rst /%s/%s" % (node_name, rst_name))
+        cmd.append(
+            "create_bd_intf_pin -mode Master "
+            "-vlnv xilinx.com:interface:axis_rtl:1.0 /%s/%s"
+            % (node_name, dout_name)
+        )
+        cmd.append(
+            "create_bd_intf_pin -mode Slave "
+            "-vlnv xilinx.com:interface:axis_rtl:1.0 /%s/%s" % (node_name, din_name)
+        )
+
+        # WEIGHTS
+        wwidth=self.get_weightstream_width()
+        wwidth_padded=roundup_to_integer_multiple(wwidth, 8)
+
+        # weight transport subhierarchy
+        cmd += axis_gather_bcast_scatter("weight_transport", 1, mmv, pe, wwidth_padded//8, parent_hier=node_name)
+        #connect it to input/clk/rst
+        cmd.append(
+            "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/weight_transport/aclk]"
+            % (node_name, clk_name, node_name)
+        )
+        cmd.append(
+            "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/weight_transport/aresetn]"
+            % (node_name, rst_name, node_name)
+        )
+
+        # add streamer if needed and make connections
+        mem_mode = self.get_nodeattr("mem_mode")
+
+        if mem_mode == "external":
+            # don't instantiate anything, just connect weight transport to weights input
+            w_name = self.get_verilog_top_module_intf_names()["s_axis"][1][0]
             cmd.append(
                 "create_bd_intf_pin -mode Slave "
-                "-vlnv xilinx.com:interface:axis_rtl:1.0 /%s/%s" % (node_name, din_name)
+                "-vlnv xilinx.com:interface:axis_rtl:1.0 /%s/%s" % (node_name, w_name)
+            )
+            cmd.append("connect_bd_intf_net [get_bd_intf_pins %s/%s] "
+                        "[get_bd_intf_pins %s/weight_transport/s_0_axis]"
+                        % (node_name, w_name, node_name)
+            )
+        else:
+            # instantiate a streamer (or constant) and connect it to the HLS IP
+            strm_vlnv = "xilinx.com:user:memstream:1.0"
+            strm_inst = "weight_streamer"
+
+            # TODO: instantiate constant when wmem == 1
+
+            mem_init = self.get_nodeattr("code_gen_dir_ipgen") + "/"
+            cmd.append(
+                "create_bd_cell -type ip -vlnv %s /%s/%s"
+                % (strm_vlnv, node_name, strm_inst)
+            )
+            cmd.append(
+                "set_property -dict [list "
+                "CONFIG.NSTREAMS {1} "
+                "CONFIG.MEM_DEPTH {%d} "
+                "CONFIG.MEM_WIDTH {%d} "
+                "CONFIG.MEM_INIT {%s} "
+                "CONFIG.RAM_STYLE {%s} "
+                "CONFIG.STRM0_DEPTH {%d} "
+                "CONFIG.STRM0_WIDTH {%d} "
+                "CONFIG.STRM0_OFFSET {0} "
+                "] [get_bd_cells /%s/%s]"
+                % (
+                    self.calc_wmem(),
+                    wwidth_padded,
+                    mem_init,
+                    self.get_nodeattr("ram_style"),
+                    self.calc_wmem(),
+                    wwidth_padded,
+                    node_name,
+                    strm_inst
+                )
             )
 
-            # instantiate a streamer and connect it to the HLS IP
-            strm_vlnv = "xilinx.com:user:memstream:1.0"
-            strm_inst = node_name + "_wstrm"
+            # connect output of streamer to input of weight broadcaster
+            cmd.append("connect_bd_intf_net [get_bd_intf_pins %s/%s/m_axis_0] "
+                        "[get_bd_intf_pins %s/weight_transport/s_0_axis]"
+                        % (node_name, strm_inst, node_name)
+            )
 
+            #connect streamer clk, reset
+            cmd.append(
+                "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/%s/aclk]"
+                % (node_name, clk_name, node_name, strm_inst)
+            )
+            cmd.append(
+                "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/%s/aresetn]"
+                % (node_name, rst_name, node_name, strm_inst)
+            )
 
-            if self.get_nodeattr("fine_grained")==True:
-                mmv_value = self.get_nodeattr("MMV")
-                cmd = self.instantiate_initial_mmv_blocks(cmd)
+        # INPUTS
+        iwidth = self.get_instream_width_padded()
+        is_vvau = True if self.get_nodeattr("VVAU") == 1 else False
 
-                for mmv in range(mmv_value):   
-                    # instantiate the hls ip "pe" number of times
-                    for i in range(pe):
-                        cmd.append(
-                            "create_bd_cell -type ip -vlnv %s /%s/%s_%d_%d"
-                            % (self.get_nodeattr("ip_vlnv"), node_name, node_name, mmv, i)
-                        )
-                    # WEIGHTS 
-
-                    # Condition for split wstrms or constant blocks
-                    if self.calc_wmem() != 1: 
-                        if self.get_weightstream_width() > 40000:
-                            wstrm_factor = 2
-                        else:
-                            wstrm_factor = 1
-
-                        split_weightstream_width=self.get_weightstream_width()//wstrm_factor
-                        split_weightstream_width_padded=roundup_to_integer_multiple(split_weightstream_width, 8)
-
-                        for w in range(wstrm_factor):
-                            if mmv == 0:
-                                if wstrm_factor == 1: 
-                                    mem_init = self.get_nodeattr("code_gen_dir_ipgen") + "/"
-                                else:
-                                    mem_init = self.get_nodeattr("code_gen_dir_ipgen") + "/wstrm" + str(w) + "/"
-                                cmd.append(
-                                    "create_bd_cell -type ip -vlnv %s /%s/%s_%d"
-                                    % (strm_vlnv, node_name, strm_inst, w)
-                                )
-                                cmd.append(
-                                    "set_property -dict [list "
-                                    "CONFIG.NSTREAMS {1} "
-                                    "CONFIG.MEM_DEPTH {%d} "
-                                    "CONFIG.MEM_WIDTH {%d} "
-                                    "CONFIG.MEM_INIT {%s} "
-                                    "CONFIG.RAM_STYLE {%s} "
-                                    "CONFIG.STRM0_DEPTH {%d} "
-                                    "CONFIG.STRM0_WIDTH {%d} "
-                                    "CONFIG.STRM0_OFFSET {0} "
-                                    "] [get_bd_cells /%s/%s_%d]"
-                                    % (
-                                        self.calc_wmem(),
-                                        split_weightstream_width_padded,
-                                        mem_init,
-                                        self.get_nodeattr("ram_style"),
-                                        self.calc_wmem(),
-                                        split_weightstream_width_padded,
-                                        node_name,
-                                        strm_inst,
-                                        w
-                                    )
-                                )
-
-                            # broadcast weights to mmv splitters
-                            cmd.append("create_bd_cell -type ip -vlnv user.org:user:extend_broadcaster2:1.0 %s/axis_broadcaster_weight_mmv_%d" % (node_name, w))
-                            cmd.append("set_property -dict [list CONFIG.C_AXIS_TDATA_WIDTH {%d} CONFIG.C_NUM_MI_SLOTS {%s}] [get_bd_cells %s/axis_broadcaster_weight_mmv_%d]" % (split_weightstream_width_padded, mmv_value, node_name, w))
-
-
-                            # connect output of streamer to input of weight broadcaster
-                            cmd.append("connect_bd_intf_net [get_bd_intf_pins %s/%s_%s/m_axis_0] "
-                                        "[get_bd_intf_pins %s/axis_broadcaster_weight_mmv_%d/s_axis]"
-                                        % (node_name, strm_inst, w, node_name, w)
-                            )
-
-                            #instantiate and configure the weight splitter
-                            cmd.append("create_bd_cell -type ip -vlnv user.org:user:axis_split_core:1.0 %s/axis_weight_splitter_%d_%d" % (node_name, mmv, w))
-                            cmd.append("set_property -dict [list CONFIG.S_AXIS_TDATA_WIDTH_PAD {%d} CONFIG.C_AXIS_TDATA_WIDTH {%d} CONFIG.M_AXIS_TDATA_WIDTH_PAD {%d} CONFIG.C_NUM_MI_SLOTS {%d}] [get_bd_cells %s/axis_weight_splitter_%d_%d]" % (split_weightstream_width_padded, split_weightstream_width, self.get_weight_splitter_output_width_padded(), pe//wstrm_factor, node_name, mmv, w))
-
-                            cmd = self.weight_clk_and_reset(cmd, w, mmv)
-    
-                            #connect output of weight broadcaster to input of weight splitter
-                            cmd.append("connect_bd_intf_net [get_bd_intf_pins %s/axis_broadcaster_weight_mmv_%d/m_axis_%02d] [get_bd_intf_pins %s/axis_weight_splitter_%d_%d/s_axis]" % (node_name, w, mmv, node_name, mmv, w))
-
-    
-                            for i in range(pe//wstrm_factor):
-                                cmd.append(
-                                    "connect_bd_intf_net [get_bd_intf_pins %s/axis_weight_splitter_%d_%d/m_axis_%02d] "
-                                    "[get_bd_intf_pins %s/%s_%d_%d/weights_V_V]"
-                                    % (node_name, mmv, w, i, node_name, node_name, mmv, w * (pe//wstrm_factor) + i)
-                                    )    
-
-                    else:
-                        dat_file = self.get_nodeattr("code_gen_dir_ipgen") + "/memblock_0.dat" 
-                        df = open(dat_file, "r")
-                        for i in range(pe):
-                            cmd.append("create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 %s/xlconstant_data_%d_%02d" % (node_name, mmv, i))
-                            df.seek((pe - 1 - i)*((simd*wp)//4), 0)
-                            weight_val = df.read((simd*wp)//4)
-                            cmd.append("set_property -dict [list CONFIG.CONST_WIDTH {%d} CONFIG.CONST_VAL {%s}] [get_bd_cells %s/xlconstant_data_%d_%02d]" % (self.get_weight_splitter_output_width_padded(), '0x' + weight_val, node_name, mmv, i))
-
-                            cmd.append("connect_bd_net [get_bd_pins %s/xlconstant_data_%d_%02d/dout] [get_bd_pins %s/%s_%d_%d/weights_V_V_TDATA]" % (node_name, mmv, i, node_name, node_name, mmv, i))
-
-                            cmd.append("create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 %s/xlconstant_valid_%d_%02d" % (node_name, mmv, i))
-
-                            cmd.append("set_property -dict [list CONFIG.CONST_WIDTH {%d} CONFIG.CONST_VAL {%s}] [get_bd_cells %s/xlconstant_valid_%d_%02d]" % (1, 1, node_name, mmv, i))
-    
-                            cmd.append("connect_bd_net [get_bd_pins %s/xlconstant_valid_%d_%02d/dout] [get_bd_pins %s/%s_%d_%d/weights_V_V_TVALID]" % (node_name, mmv, i, node_name, node_name, mmv, i))
-                            
-                            cmd.append("save_bd_design")
-                        df.close()
-
-                    # instantiate combiner block and set input parameters
-                    cmd.append("create_bd_cell -type ip -vlnv user.org:user:axis_combiner_v1_1_19_top:1.0 %s/axis_combiner_output_%d" % (node_name, mmv))
-                    cmd.append("set_property -dict [list CONFIG.C_AXIS_TDATA_WIDTH {%d} CONFIG.C_AXIS_SIGNAL_SET {0x00000003} CONFIG.C_NUM_SI_SLOTS {%d}] [get_bd_cells %s/axis_combiner_output_%d]" % (self.get_outstream_width() // self.get_nodeattr("PE"), pe, node_name, mmv)) 
-                    
-                    # INPUTS
-                    # instantiate input buffer
-                    cmd.append("create_bd_cell -type ip -vlnv user.org:user:inputbuf:1.0 %s/inputbuf_%d" % (node_name, mmv))
-                    cmd.append("set_property -dict [list CONFIG.WIDTH {%d} CONFIG.DEPTH {%d} CONFIG.NFOLDS {%d} CONFIG.RAM_STYLE {%s}] [get_bd_cells %s/inputbuf_%d]" % (self.get_instream_width_padded(), synapse_fold, neuron_fold, self.get_nodeattr("ibuf_ram_style"), node_name, mmv))
-                    
-                    # instantiate input broadcaster and set number of masters
-                    cmd.append("create_bd_cell -type ip -vlnv user.org:user:extend_broadcaster2:1.0 %s/axis_broadcaster_input_%d" % (node_name, mmv))
-                    cmd.append("set_property -dict [list CONFIG.C_AXIS_TDATA_WIDTH {%d} CONFIG.C_NUM_MI_SLOTS {%s}] [get_bd_cells %s/axis_broadcaster_input_%d]" % (self.get_instream_width_padded(), pe, node_name, mmv))
-
-                    # connect input splitter outputs to input buffer
-                    cmd.append("connect_bd_intf_net [get_bd_intf_pins %s/axis_splitter_inputs_mmv/m_axis_%02d] " 
-                                "[get_bd_intf_pins %s/inputbuf_%d/s_axis]" 
-                                % (node_name, mmv, node_name, mmv
-                                )
-                                )
-
-                    # connect inputbuf to input of each broadcaster
+        # instantiate input buffer(s) and transport tree(s)
+        if is_vvau:
+            #instantiate a splitter
+            cmd += axis_gather_bcast_scatter("vvau_act_transport", 1, mmv, pe, (iwidth//8), parent_hier=node_name)
+            #connect it to input/clk/rst
+            cmd.append(
+                "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/vvau_act_transport/aclk]"
+                % (node_name, clk_name, node_name)
+            )
+            cmd.append(
+                "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/vvau_act_transport/aresetn]"
+                % (node_name, rst_name, node_name)
+            )
+            cmd.append(
+                "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/vvau_act_transport/s_0_axis]"
+                % (node_name, din_name, node_name)
+            )
+        else:
+            # instantiate a splitter to break the stream into MMV chunks if needed
+            if mmv>1:
+                cmd += axis_gather_bcast_scatter("mvau_immv_transport", 1, mmv, 1, (iwidth//8), parent_hier=node_name)
+                #connect it to input/clk/rst
+                cmd.append(
+                    "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/mvau_immv_transport/aclk]"
+                    % (node_name, clk_name, node_name)
+                )
+                cmd.append(
+                    "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/mvau_immv_transport/aresetn]"
+                    % (node_name, rst_name, node_name)
+                )
+                cmd.append(
+                    "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/mvau_immv_transport/s_0_axis]"
+                    % (node_name, din_name, node_name)
+                )
+            # instantiate MMV inputbuffers and broadcast networks
+            for m in range(mmv):
+                cmd.append("create_bd_cell -type ip -vlnv xilinx.com:user:inputbuf:1.0 %s/inputbuf_%d" % (node_name, m))
+                cmd.append("set_property -dict [list CONFIG.WIDTH {%d} CONFIG.DEPTH {%d} CONFIG.NFOLDS {%d} CONFIG.RAM_STYLE {%s}] [get_bd_cells %s/inputbuf_%d]" % (self.get_instream_width_padded(), synapse_fold, neuron_fold, self.get_nodeattr("ibuf_ram_style"), node_name, m))
+                # connect inputbuf clk/rst
+                cmd.append(
+                    "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/inputbuf_%d/aclk]"
+                    % (node_name, clk_name, node_name, m)
+                )
+                cmd.append(
+                    "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/inputbuf_%d/aresetn]"
+                    % (node_name, rst_name, node_name, m)
+                )
+                if mmv==1:
                     cmd.append(
-                        "connect_bd_intf_net [get_bd_intf_pins %s/inputbuf_%d/m_axis] "
-                        "[get_bd_intf_pins %s/axis_broadcaster_input_%d/s_axis]"
-                        % (node_name, mmv, node_name, mmv)
+                        "connect_bd_intf_net [get_bd_intf_pins %s/%s] [get_bd_intf_pins %s/inputbuf_%d/s_axis]"
+                        % (node_name, din_name, node_name, m)
                     )
-
-                    # connect broadcasters to pe
-                    for i in range(pe):
-                        cmd.append(
-                            "connect_bd_intf_net [get_bd_intf_pins %s/axis_broadcaster_input_%d/m_axis_%02d] "
-                            "[get_bd_intf_pins %s/%s_%d_%d/%s]"
-                            % (node_name, mmv, i, node_name, node_name, mmv, i, din_name)
-                        ) 
-
-
-
-
-                    for i in range(pe):
-                        cmd.append("connect_bd_intf_net [get_bd_intf_pins %s/%s_%d_%d/out_V_V] [get_bd_intf_pins %s/axis_combiner_output_%d/s_axis_%02d]" % (node_name, node_name, mmv, i, node_name, mmv, i))
-
-
-                    if mmv_value > 1:
-                        # connect output of combiner to synchronising combiner 
-                        cmd.append(
-                            "connect_bd_intf_net [get_bd_intf_pins %s/axis_combiner_output_%d/m_axis] "
-                            "[get_bd_intf_pins %s/axis_combiner_mmv/s_axis_%02d]" 
-                            % (node_name, mmv, node_name, mmv)
-                        )
-
-                        
-                        if mmv == 0:
-                            cmd.append(
-                            "connect_bd_intf_net [get_bd_intf_pins %s/axis_combiner_mmv/m_axis] "
-                            "[get_bd_intf_pins %s/%s] " 
-                            % (node_name, node_name, dout_name)
-                            )
-
-                    else:
-                        # connect output of combiner to block output
-                        cmd.append("connect_bd_intf_net [get_bd_intf_pins %s/axis_combiner_output_%d/m_axis] [get_bd_intf_pins %s/%s]" % (node_name, mmv, node_name, dout_name))                       
-    
-
-                    for i in range(pe):
-                        cmd.append(
-                        "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/%s_%d_%d/%s]"
-                        % (node_name, rst_name, node_name, node_name, mmv, i, rst_name)
-                        )
-                        cmd.append(
-                        "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/%s_%d_%d/%s]"
-                        % (node_name, clk_name, node_name, node_name, mmv, i, clk_name)
-                        )
-    
-                    # connect clk and reset - combiner
+                else:
                     cmd.append(
-                        "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/axis_combiner_output_%d/aresetn]"
-                        % (node_name, rst_name, node_name, mmv)
+                        "connect_bd_intf_net [get_bd_intf_pins %s/mvau_immv_transport/m_0_%s_axis] [get_bd_intf_pins %s/inputbuf_%d/s_axis]"
+                        % (node_name, din_name, node_name, m)
                     )
+                # instantiate a bcast network
+                cmd += axis_gather_bcast_scatter("mvau_act_transport_"+str(m), 1, pe, 1, (iwidth//8)//mmv, parent_hier=node_name)
+                #connect it to input/clk/rst
+                cmd.append(
+                    "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/mvau_act_transport_%d/aclk]"
+                    % (node_name, clk_name, node_name, m)
+                )
+                cmd.append(
+                    "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/mvau_act_transport_%d/aresetn]"
+                    % (node_name, rst_name, node_name, m)
+                )
+                cmd.append(
+                    "connect_bd_intf_net [get_bd_intf_pins %s/inputbuf_%d/m_axis] [get_bd_intf_pins %s/mvau_act_transport_%d/s_0_axis]"
+                    % (node_name, m, node_name, m)
+                )
+
+        # OUTPUTS
+        # accumulator gather network
+        accwidth = DataType[self.get_nodeattr("accDataType")].bitwidth()
+        cmd += axis_gather_bcast_scatter("acc_transport", pe*mmv, 1, 1, accwidth, parent_hier=node_name)
+        cmd.append(
+            "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/acc_transport/aclk]"
+            % (node_name, clk_name, node_name)
+        )
+        cmd.append(
+            "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/acc_transport/aresetn]"
+            % (node_name, rst_name, node_name)
+        )
+        # TODO: implement MMV terminator with axis switch
+
+        # PEs
+        for m in range(mmv):   
+            # instantiate the hls ip "pe" number of times
+            for i in range(pe):
+                cmd.append(
+                    "create_bd_cell -type ip -vlnv %s /%s/PE_%d_%d"
+                    % (self.get_nodeattr("ip_vlnv"), node_name, m, i)
+                )
+                cmd.append(
+                    "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/PE_%d_%d/%s]"
+                    % (node_name, clk_name, node_name, m, i, clk_name)
+                )
+                cmd.append(
+                    "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/PE_%d_%d/%s]"
+                    % (node_name, rst_name, node_name, m, i, rst_name)
+                )
+                # connect transport/accumulator network(s) to PEs
+                if is_vvau:
                     cmd.append(
-                        "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/axis_combiner_output_%d/aclk]"
-                        % (node_name, clk_name, node_name, mmv)
-                    ) 
-    
-                    cmd.append(
-                        "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/inputbuf_%d/aresetn]"
-                        % (node_name, rst_name, node_name, mmv)
+                        "connect_bd_intf_net [get_bd_intf_pins %s/vvau_act_transport/m_%d_%d_axis] "
+                        "[get_bd_intf_pins %s/PE_%d_%d/%s]"
+                        % (node_name, m, i, node_name, m, i, din_name)
                     )
+                else:
                     cmd.append(
-                        "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/inputbuf_%d/aclk]"
-                        % (node_name, clk_name, node_name, mmv)
-                    ) 
-                    # connect clk and reset - input broadcaster
-                    cmd.append(
-                        "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/axis_broadcaster_input_%d/aresetn]"
-                        % (node_name, rst_name, node_name, mmv)
+                        "connect_bd_intf_net [get_bd_intf_pins %s/mvau_act_transport_%d/m_%d_0_axis] "
+                        "[get_bd_intf_pins %s/PE_%d_%d/%s]"
+                        % (node_name, m, i, node_name, m, i, din_name)
                     )
-                    cmd.append(
-                        "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/axis_broadcaster_input_%d/aclk]"
-                        % (node_name, clk_name, node_name, mmv)
-                    ) 
-                cmd.append("save_bd_design")
-            else:
-                raise Exception("Unrecognized mem_mode for StreamingFCLayer")
-            return cmd
+                cmd.append(
+                    "connect_bd_intf_net [get_bd_intf_pins %s/acc_transport/s_%d_axis] "
+                    "[get_bd_intf_pins %s/PE_%d_%d/%s]"
+                    % (node_name, m*pe+i, node_name, m, i, dout_name)
+                )
+                cmd.append(
+                    "connect_bd_intf_net [get_bd_intf_pins %s/weight_transport/m_%d_%d_axis] "
+                    "[get_bd_intf_pins %s/PE_%d_%d/weights_V_V]"
+                    % (node_name, m, i, node_name, m, i)
+                )
+
+        cmd.append(
+            "connect_bd_intf_net [get_bd_intf_pins %s/acc_transport/m_0_0_axis] "
+            "[get_bd_intf_pins %s/%s]"
+            % (node_name, node_name, dout_name)
+        )
+
+        cmd.append("save_bd_design")
+        return cmd
 
     def get_verilog_top_module_intf_names(self):
         intf_names = super().get_verilog_top_module_intf_names()
