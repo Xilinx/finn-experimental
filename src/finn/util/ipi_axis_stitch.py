@@ -45,9 +45,9 @@ def axis_gather_bcast_scatter(new_hier, njoins, nreplicas, nsplits, ibits, paren
     if nsplits == 1:
         if nreplicas != 1:
             for m in range(nreplicas):
-                cmd.append("connect_bd_intf_net [get_bd_intf_pins %s/m_%d_0_axis] [get_bd_intf_pins %s/broadcast/m_%d_axis]" % (hier_name, m, hier_name, m//16, m%16))
+                cmd.append("connect_bd_intf_net [get_bd_intf_pins %s/m_%d_0_axis] [get_bd_intf_pins %s/broadcast/m_%d_axis]" % (hier_name, m, hier_name, m))
         else:
-            cmd.append("connect_bd_intf_net [get_bd_intf_pins %s/m_0_0_axis] [get_bd_intf_pins %s/gather/m_axis]" % (hier_name, hier_name))
+            cmd.append("connect_bd_intf_net [get_bd_intf_pins %s/m_0_0_axis] [get_bd_intf_pins %s/broadcast/m_0_axis]" % (hier_name, hier_name))
     else:
         assert bcast_ibits % nsplits == 0
         split_obits = bcast_ibits//nsplits
