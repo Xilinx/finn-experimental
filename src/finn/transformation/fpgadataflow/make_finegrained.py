@@ -105,14 +105,21 @@ class MakeFinegrained(Transformation):
                 node_input = n.input[0]
                 weight_input = n.input[1]
                 node_output = n.output[0]
-                # if runtime-writable weights, can't use finegrained
-                if getCustomOp(n).get_nodeattr("runtime_writeable_weights") == 1:
-                    continue
+                # if MVAU with runtime-writable weights, can't use finegrained
+                if n.op_type == "StreamingFCLayer_Batch":
+                    if getCustomOp(n).get_nodeattr("runtime_writeable_weights") == 1:
+                        continue
                 #TODO: decouple the activation if needed
                 assert getCustomOp(n).get_nodeattr("noActivation") == 1
                 # copy all relevant parameters to new node
-                mmode = getCustomOp(n).get_nodeattr("mem_mode")
-                if mmode == "const":
+                # mem mode for MVAU can be const, decoupled, external
+                # we can handle decoupled and external
+                # turn const to decoupled, keep external
+                if n.op_type == "StreamingFCLayer_Batch":
+                    mmode = getCustomOp(n).get_nodeattr("mem_mode")
+                    if mmode == "const":
+                        mmode = "decoupled"
+                else:
                     mmode = "decoupled"
                 new_node = helper.make_node(
                     "StreamingFCLayer_MMV_FG_Batch",
