@@ -154,6 +154,13 @@ class ActivationTransport_MMV_Batch(StreamingDataWidthConverter_Batch):
             % (node_name, node_name)
         )
 
+        # find element size, which is the greatest common divisor of ibits and obits
+        # this should be equal to either ibits or obits TODO: assert for this
+        elem_size = math.gcd(ibits, obits)
+        # DWC input takes 
+        dwc_ibytes = (ibits//elem_size)*int(math.ceil(elem_size/8))
+        dwc_obytes = (obits//elem_size)*int(math.ceil(elem_size/8))
+
         # for every MMV lane, do conversion
         for m in range(mmv_value):
             #if up-converting, dwc then pack
@@ -172,12 +179,12 @@ class ActivationTransport_MMV_Batch(StreamingDataWidthConverter_Batch):
             cmd.append(
                 "set_property -dict "
                 "[list CONFIG.S_TDATA_NUM_BYTES {%d}] [get_bd_cells /%s/dwc_%d]"
-                % (np.ceil(self.get_instream_width() / 8), node_name, m)
+                % (dwc_ibytes, node_name, m)
             )
             cmd.append(
                 "set_property -dict "
                 "[list CONFIG.M_TDATA_NUM_BYTES {%d}] [get_bd_cells /%s/dwc_%d]"
-                % (np.ceil(self.get_outstream_width() / 8), node_name, m)
+                % (dwc_obytes, node_name, m)
             )
             cmd.append(
                 "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/dwc_%d/aresetn]"
@@ -190,7 +197,7 @@ class ActivationTransport_MMV_Batch(StreamingDataWidthConverter_Batch):
 
             #unpack 
             if ibits > obits:
-                cmd += axis_unpack("unpack_"+str(m), int(ibits/obits), obits, parent_hier=node_name)
+                cmd += axis_unpack("unpack_"+str(m), int(ibits/elem_size), elem_size, parent_hier=node_name)
                 cmd.append(
                     "connect_bd_intf_net [get_bd_intf_pins %s/mmv_split/m_0_%d_axis] [get_bd_intf_pins %s/unpack_%d/s_axis]"
                     % (node_name, m, node_name, m)
@@ -215,7 +222,7 @@ class ActivationTransport_MMV_Batch(StreamingDataWidthConverter_Batch):
 
             #repack
             if ibits < obits:
-                cmd += axis_pack("pack_"+str(m), int(obits/ibits), ibits, parent_hier=node_name)
+                cmd += axis_pack("pack_"+str(m), int(obits/elem_size), elem_size, parent_hier=node_name)
                 cmd.append(
                     "connect_bd_intf_net [get_bd_intf_pins %s/mmv_join/s_%d_axis] [get_bd_intf_pins %s/pack_%d/m_axis]"
                     % (node_name, m, node_name, m)

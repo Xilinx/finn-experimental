@@ -125,7 +125,7 @@
         <spirit:displayName>Synthesis</spirit:displayName>
         <spirit:envIdentifier>:vivado.xilinx.com:synthesis</spirit:envIdentifier>
         <spirit:language>Verilog</spirit:language>
-        <spirit:modelName>mmv_input_swu_v9</spirit:modelName>
+        <spirit:modelName>swu</spirit:modelName>
         <spirit:fileSetRef>
           <spirit:localName>xilinx_anylanguagesynthesis_view_fileset</spirit:localName>
         </spirit:fileSetRef>
@@ -245,7 +245,7 @@
         <spirit:wire>
           <spirit:direction>out</spirit:direction>
           <spirit:vector>
-            <spirit:left spirit:format="long" spirit:resolve="dependent" spirit:dependency="((spirit:decode(id(&apos;MODELPARAM_VALUE.SIMD&apos;)) * spirit:decode(id(&apos;MODELPARAM_VALUE.IP_PRECISION&apos;))) - 1)">7</spirit:left>
+            <spirit:left spirit:format="long" spirit:resolve="dependent" spirit:dependency="((spirit:decode(id(&apos;MODELPARAM_VALUE.MMV_OUT&apos;)) * spirit:decode(id(&apos;MODELPARAM_VALUE.SIMD&apos;)) * spirit:decode(id(&apos;MODELPARAM_VALUE.IP_PRECISION&apos;))) - 1)">7</spirit:left>
             <spirit:right spirit:format="long">0</spirit:right>
           </spirit:vector>
           <spirit:wireTypeDefs>
@@ -290,22 +290,22 @@
     <spirit:modelParameters>
       <spirit:modelParameter xsi:type="spirit:nameValueTypeType" spirit:dataType="integer">
         <spirit:name>SIMD</spirit:name>
-        <spirit:displayName>Simd</spirit:displayName>
+        <spirit:displayName>SIMD</spirit:displayName>
         <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.SIMD">1</spirit:value>
       </spirit:modelParameter>
       <spirit:modelParameter spirit:dataType="integer">
         <spirit:name>STRIDE_HT</spirit:name>
-        <spirit:displayName>Stride</spirit:displayName>
+        <spirit:displayName>Vertical Stride</spirit:displayName>
         <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.STRIDE_HT">1</spirit:value>
       </spirit:modelParameter>
       <spirit:modelParameter spirit:dataType="integer">
         <spirit:name>STRIDE_WT</spirit:name>
-        <spirit:displayName>Stride</spirit:displayName>
+        <spirit:displayName>Horizontal Stride</spirit:displayName>
         <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.STRIDE_WT">1</spirit:value>
       </spirit:modelParameter>
       <spirit:modelParameter spirit:dataType="integer">
         <spirit:name>IFMChannels</spirit:name>
-        <spirit:displayName>Ifmchannels</spirit:displayName>
+        <spirit:displayName>Channels</spirit:displayName>
         <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.IFMChannels">2</spirit:value>
       </spirit:modelParameter>
       <spirit:modelParameter spirit:dataType="integer">
@@ -325,12 +325,12 @@
       </spirit:modelParameter>
       <spirit:modelParameter spirit:dataType="integer">
         <spirit:name>IFMWidth</spirit:name>
-        <spirit:displayName>Ifmwidth</spirit:displayName>
+        <spirit:displayName>Input Image Width</spirit:displayName>
         <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.IFMWidth">8</spirit:value>
       </spirit:modelParameter>
       <spirit:modelParameter spirit:dataType="integer">
         <spirit:name>IFMHeight</spirit:name>
-        <spirit:displayName>Ifmheight</spirit:displayName>
+        <spirit:displayName>Input Image Height</spirit:displayName>
         <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.IFMHeight">8</spirit:value>
       </spirit:modelParameter>
       <spirit:modelParameter spirit:dataType="integer">
@@ -345,27 +345,27 @@
       </spirit:modelParameter>
       <spirit:modelParameter spirit:dataType="integer">
         <spirit:name>OFMWidth</spirit:name>
-        <spirit:displayName>Ofmwidth</spirit:displayName>
+        <spirit:displayName>Output Image Width</spirit:displayName>
         <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.OFMWidth">6</spirit:value>
       </spirit:modelParameter>
       <spirit:modelParameter spirit:dataType="integer">
         <spirit:name>OFMHeight</spirit:name>
-        <spirit:displayName>Ofmheight</spirit:displayName>
+        <spirit:displayName>Output Image Height</spirit:displayName>
         <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.OFMHeight">6</spirit:value>
       </spirit:modelParameter>
       <spirit:modelParameter spirit:dataType="integer">
         <spirit:name>IP_PRECISION</spirit:name>
-        <spirit:displayName>Ip Precision</spirit:displayName>
+        <spirit:displayName>Precision</spirit:displayName>
         <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.IP_PRECISION">8</spirit:value>
       </spirit:modelParameter>
       <spirit:modelParameter spirit:dataType="integer">
         <spirit:name>MMV_IN</spirit:name>
-        <spirit:displayName>Mmv In</spirit:displayName>
-        <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.MMV_IN">2</spirit:value>
+        <spirit:displayName>Input MMV</spirit:displayName>
+        <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.MMV_IN">1</spirit:value>
       </spirit:modelParameter>
       <spirit:modelParameter spirit:dataType="integer">
         <spirit:name>MMV_OUT</spirit:name>
-        <spirit:displayName>Mmv Out</spirit:displayName>
+        <spirit:displayName>Output MMV</spirit:displayName>
         <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.MMV_OUT">1</spirit:value>
       </spirit:modelParameter>
     </spirit:modelParameters>
