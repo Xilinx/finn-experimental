@@ -176,7 +176,8 @@ class ConvolutionInputGenerator_MMV(HLSCustomOp):
         else:
             OFMDIM_MOD_MMV = 1 
         cmd.append("set_property -dict [list CONFIG.SIMD {%d} \
-                                        CONFIG.STRIDE {%d} \
+                                        CONFIG.STRIDE_HT {%d} \
+                                        CONFIG.STRIDE_WT {%d} \
                                         CONFIG.IFMChannels {%d} \
                                         CONFIG.KERNEL_HEIGHT {%d} \
                                         CONFIG.KERNEL_WIDTH {%d} \
@@ -187,12 +188,11 @@ class ConvolutionInputGenerator_MMV(HLSCustomOp):
                                         CONFIG.OFMWidth {%d} \
                                         CONFIG.OFMHeight {%d} \
                                         CONFIG.IP_PRECISION {%d}\
-                                        CONFIG.MMVI {%d}\
-                                        CONFIG.MMVO {%d}\
-                                        CONFIG.BUFFER_SIZE {%d}\
-                                        CONFIG.OFMDIM_MOD_MMV {%d}] \
+                                        CONFIG.MMV_IN {%d}\
+                                        CONFIG.MMV_OUT {%d}]\
                                         [get_bd_cells %s]" % (simd,
                                                             stride[0],
+                                                            stride[1],
                                                             ifmch,
                                                             k[1],
                                                             k[0],
@@ -205,8 +205,6 @@ class ConvolutionInputGenerator_MMV(HLSCustomOp):
                                                             precision,
                                                             mmvi,
                                                             mmvo,
-                                                            buffer_size,
-                                                            OFMDIM_MOD_MMV,
                                                             node_name
                                                             )
                     )

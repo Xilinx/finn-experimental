@@ -1,26 +1,6 @@
 `timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Company: 
-// Engineer: 
-// 
-// Create Date: 05/05/2021 10:19:13 AM
-// Design Name: 
-// Module Name: mmv_input_swu
-// Project Name: 
-// Target Devices: 
-// Tool Versions: 
-// Description: 
-// 
-// Dependencies: 
-// 
-// Revision:
-// Revision 0.01 - File Created
-// Additional Comments:
-// 
-//////////////////////////////////////////////////////////////////////////////////
 
-
-module mmv_swu_rtl #(
+module swu #(
     parameter SIMD = 32,
     parameter STRIDE_HT = 1,
     parameter STRIDE_WT = 1,
@@ -32,7 +12,7 @@ module mmv_swu_rtl #(
 	parameter IFMWidth = 5,
 	parameter IFMHeight = 5,
 	parameter PADDING_WIDTH = 0,
-	parameter PADDING_HEIGHT =0,
+	parameter PADDING_HEIGHT = 0,
 	parameter OFMWidth = 3,
 	parameter OFMHeight = 3,
 
@@ -40,27 +20,28 @@ module mmv_swu_rtl #(
 	parameter IP_PRECISION = 1,
 	parameter MMV_IN = 1,
 	parameter MMV_OUT = 1,
-	parameter BUFFER_SIZE = 15,
-	parameter OFMDIM_MOD_MMV = 0,
-	parameter S_BY_M = 0,
 	parameter DWS = 0,
-	parameter floor_O_BY_I = 0,
-	parameter ceil_O_BY_I = 1,
-	parameter ZEROPAD = 0,
-	parameter O_MOD_MMVI = 0)
+	parameter ZEROPAD = 0)
 
 
 (
-input clk,
-input resetn,
-input [MMV_IN * SIMD * IP_PRECISION - 1 : 0] ip_axis_tdata,
-input ip_axis_tvalid,
-output ip_axis_tready,
-output [MMV_OUT * SIMD * IP_PRECISION - 1 : 0] op_axis_tdata,
-input op_axis_tready,
-output op_axis_tvalid
-    );
-    
+input aclk,
+input aresetn,
+
+input [MMV_IN * SIMD * IP_PRECISION - 1 : 0] s_axis_tdata,
+input s_axis_tvalid,
+output s_axis_tready,
+
+output [MMV_OUT * SIMD * IP_PRECISION - 1 : 0] m_axis_tdata,
+input m_axis_tready,
+output m_axis_tvalid
+);
+
+localparam BUFFER_SIZE = STRIDE_HT * IFMWidth * IFMChannels/SIMD * KERNEL_HEIGHT;
+localparam OFMDIM_MOD_MMV = (OFMWidth/MMVI==0) ? 0 : 1; 
+localparam floor_O_BY_I = MMV0/MMVI;
+localparam ceil_O_BY_I = (MMVO+MMVI-1)/MMVI;
+
 localparam EFF_CHANNELS = IFMChannels/SIMD;
 localparam SIZEA = BUFFER_SIZE/MMV_IN;
 localparam SIZEB = BUFFER_SIZE;
@@ -120,10 +101,10 @@ reg stride_toggle;
 integer m , n, o;
 reg [$clog2(ceil_O_BY_I) * MMV_OUT - 1 : 0] mmv_mul_idx = 0;
 reg [$clog2(MMV_OUT) * MMV_OUT - 1 : 0] mmv_add_idx = 0 ;
-assign ip_axis_tready = !buffer_full || (total_pending_rds > 0);
+assign s_axis_tready = !buffer_full || (total_pending_rds > 0);
 assign weA = s_axis_hs & ( (input_pixel * BUFFER_SIZE + counter) < (IFMHeight * IFMWidth * EFF_CHANNELS));
-assign ram_enq = op_axis_tready | ~q_valid;
-assign op_axis_tvalid = q_valid;
+assign ram_enq = m_axis_tready | ~q_valid;
+assign m_axis_tvalid = q_valid;
 assign enaB = buffer_full & !buffer_empty_i 
             & (enaB_q | ~r_valid) 
             & (!(ofm_row_tracker[0] != 0 && ofm_column_tracker[0] > 0 && kh == KERNEL_HEIGHT - 2 && kw == KERNEL_WIDTH - 1 && ch_ptr == 0) 
@@ -131,8 +112,8 @@ assign enaB = buffer_full & !buffer_empty_i
             & (!(ofm_row_tracker[0] != 0 && ofm_column_tracker[0] == 0 && kh == KERNEL_HEIGHT - 2  && ch_ptr == 0) 
             || (crtcl_rd_cntr[0] * MMV_IN < (IFMWidth * EFF_CHANNELS - kw * EFF_CHANNELS - ofm_column_tracker[MMV_OUT - 1])));
 
-assign enaB_q = (op_axis_tready | ~q_valid);
-assign enaB_r = buffer_full & !buffer_empty_i & (op_axis_tready | ~r_valid);
+assign enaB_q = (m_axis_tready | ~q_valid);
+assign enaB_r = buffer_full & !buffer_empty_i & (m_axis_tready | ~r_valid);
 
 
 wire[MMV_OUT - 1 : 0] zeropad;
@@ -150,12 +131,12 @@ generate
    .RAM_STYLE(RAM_STYLE)
 )
     ram (
-   .clkA(clk),
-   .clkB(clk),
+   .clkA(aclk),
+   .clkB(aclk),
    .addrA(counter),
    .addrB(pos[mi]),
-   .diA(ip_axis_tdata),
-   .doB(op_axis_tdata[(mi+1)*SIMD*IP_PRECISION-1 -: SIMD*IP_PRECISION]),
+   .diA(s_axis_tdata),
+   .doB(m_axis_tdata[(mi+1)*SIMD*IP_PRECISION-1 -: SIMD*IP_PRECISION]),
    .enaA(1),
    .enaB(enaB),
    .enaB_q(enaB_q),
@@ -166,9 +147,9 @@ generate
 endgenerate
 
 
-assign m_axis_hs = op_axis_tready && op_axis_tvalid;
-assign s_axis_hs = ip_axis_tready && ip_axis_tvalid;
-assign restart = op_axis_tready && op_axis_tvalid && buffer_empty;
+assign m_axis_hs = m_axis_tready && m_axis_tvalid;
+assign s_axis_hs = s_axis_tready && s_axis_tvalid;
+assign restart = m_axis_tready && m_axis_tvalid && buffer_empty;
 
 wire inc_pending_rd_gen;
 wire inc_pending_rd_last;
@@ -307,22 +288,22 @@ end else begin : mmvo_0_pos_mod
 end
 endgenerate
 
-always @(posedge clk)
-    if(~resetn) 
+always @(posedge aclk)
+    if(~aresetn) 
          input_counter <= 0;
     else if(input_counter == (IFMHeight * IFMWidth/MMV_IN * EFF_CHANNELS))
          input_counter <= 0;
     else if(s_axis_hs)
          input_counter <= input_counter + 1;
          
-always @(posedge clk)
-    if(~resetn | input_counter == IFMHeight * IFMWidth/MMV_IN * EFF_CHANNELS) 
+always @(posedge aclk)
+    if(~aresetn | input_counter == IFMHeight * IFMWidth/MMV_IN * EFF_CHANNELS) 
          finish_rds <= 0;
     else if(buffer_empty & input_counter !=0)
          finish_rds <= 1;
 
-always @(posedge clk)
-    if(~resetn | (restart) | finish_rds ) 
+always @(posedge aclk)
+    if(~aresetn | (restart) | finish_rds ) 
          new_rd_cntr <= 0;
     else if(s_axis_hs & pending_rd_cntr == 0 & crtcl_rd_cntr[0] == 0 & crtcl_rd_cntr[1] == 0 & buffer_full & !inc_pending_rd_gen & !inc_pending_rd_last)
          new_rd_cntr <= new_rd_cntr + 1;
@@ -339,8 +320,8 @@ always @(posedge clk)
          & (new_rd_cntr <= pending_rd_cntr))
                      new_rd_cntr <= 0;
     
-always @(posedge clk)
-    if(~resetn | (restart) | finish_rds) 
+always @(posedge aclk)
+    if(~aresetn | (restart) | finish_rds) 
         total_pending_rds <= BUFFER_SIZE/MMV_IN;
     else if(s_axis_hs & !inc_pending_rd_gen & !inc_pending_rd_last & !inc_pending_rd_stride)
         total_pending_rds <= total_pending_rds - 1;
@@ -357,8 +338,8 @@ always @(posedge clk)
     else if((s_axis_hs) & inc_pending_rd_stride)
         total_pending_rds <= total_pending_rds + IFMWidth/MMV_IN *EFF_CHANNELS - 1;
  
-always @(posedge clk)
-    if(~resetn | (restart) | finish_rds) 
+always @(posedge aclk)
+    if(~aresetn | (restart) | finish_rds) 
         pending_rd_cntr <= BUFFER_SIZE/MMV_IN;
     else if (valid_ptr_vals && (ch_ptr == EFF_CHANNELS - 1 ) && (kw==KERNEL_WIDTH-1 && kh==KERNEL_HEIGHT-1) && (ofm_column_tracker[0] >= OFMWidth - MMV_OUT) && (ofm_row_tracker[0] >= PADDING_HEIGHT)) 
          pending_rd_cntr <= 0;
@@ -377,8 +358,8 @@ always @(posedge clk)
     else if (s_axis_hs & inc_pending_rd_last & crtcl_rd_cntr[0] == 0 & crtcl_rd_cntr[1] == 0)  
         pending_rd_cntr <= pending_rd_cntr + inc_rd_amt_last - 1; 
 if( STRIDE_HT == 2 ) begin
-  always @(posedge clk)
-    if(~resetn | (restart) | finish_rds) begin
+  always @(posedge aclk)
+    if(~aresetn | (restart) | finish_rds) begin
         crtcl_rd_cntr[0]<=0;
         crtcl_rd_cntr[1]<= 0; 
     end else if(!s_axis_hs && (valid_ptr_vals && (ch_ptr == EFF_CHANNELS - 1 ) && (kw==KERNEL_WIDTH-1 && kh==KERNEL_HEIGHT-1) && (ofm_column_tracker[0] >= OFMWidth - MMV_OUT) && (ofm_row_tracker[0] > PADDING_HEIGHT))) begin
@@ -425,8 +406,8 @@ if( STRIDE_HT == 2 ) begin
 end
 //8
 else begin
-  always @(posedge clk) begin : crtcl_cntr
-    if(~resetn | restart | finish_rds) begin
+  always @(posedge aclk) begin : crtcl_cntr
+    if(~aresetn | restart | finish_rds) begin
        crtcl_rd_cntr[0] <= 0;
     end else begin
       if (buffer_full && enaB && (ch_ptr == EFF_CHANNELS - 1 ) && (kw==KERNEL_WIDTH-1 && kh==KERNEL_HEIGHT-1) && ofm_column_tracker[0] >= (OFMWidth - MMV_OUT) && !(s_axis_hs)) begin
@@ -440,9 +421,9 @@ else begin
   end
 end
 
-always @(posedge clk) begin : zeropad_reg_blk
+always @(posedge aclk) begin : zeropad_reg_blk
    reg [MMV_OUT - 1: 0] i;
-   if(~resetn | restart | finish_rds)
+   if(~aresetn | restart | finish_rds)
      for( i = 0; i < MMV_OUT; i = i + 1) begin
        zeropad_reg[i] <= 0;
      end
@@ -453,8 +434,8 @@ always @(posedge clk) begin : zeropad_reg_blk
    end
 //8
 
-always @(posedge clk) begin : crtclrdcntr_reg_blk
-   if(~resetn | restart |finish_rds)
+always @(posedge aclk) begin : crtclrdcntr_reg_blk
+   if(~aresetn | restart |finish_rds)
        crtcl_rd_cntr_del <= 0;
    else 
        crtcl_rd_cntr_del <= crtcl_rd_cntr[0];
@@ -464,27 +445,27 @@ end
 
 
 
-always @(posedge clk)
-    if(~resetn | finish_rds)
+always @(posedge aclk)
+    if(~aresetn | finish_rds)
         q_valid <= 0;
     else if(enaB_q)
         q_valid <= r_valid & ~buffer_empty_i;
         
-always @(posedge clk)
-    if(~resetn | finish_rds)
+always @(posedge aclk)
+    if(~aresetn | finish_rds)
         r_valid <= 0;
     else if(enaB_q | ~r_valid)
         r_valid <=  enaB;
         
-always @(posedge clk)
-    if(~resetn | finish_rds)
+always @(posedge aclk)
+    if(~aresetn | finish_rds)
         enaB_reg <= 0;
     else 
         enaB_reg <=  enaB;        
 //1
-//assign op_axis_tvalid = buffer_full_i && !buffer_empty_i;
-always @(posedge clk) begin
-if (~resetn | finish_rds) begin
+//assign m_axis_tvalid = buffer_full_i && !buffer_empty_i;
+always @(posedge aclk) begin
+if (~aresetn | finish_rds) begin
   buffer_empty_i <= 0;
   buffer_empty_ii <= 0;
   end else begin
@@ -495,8 +476,8 @@ if (~resetn | finish_rds) begin
 
   
 //2
-always @(posedge clk) begin
-if (~resetn | restart | finish_rds) begin
+always @(posedge aclk) begin
+if (~aresetn | restart | finish_rds) begin
   buffer_empty <= 0;
   end
 else if (kh==KERNEL_HEIGHT-1 && kw==KERNEL_WIDTH-1 && ofm_row_tracker[0] == OFMHeight - 1 && ofm_column_tracker[0] == OFMWidth-MMV_OUT && ch_ptr == EFF_CHANNELS -1) begin 
@@ -507,7 +488,7 @@ end
 // process to read data
 //3
 always @(*) begin : assign_pos
-   if (~resetn | restart | finish_rds) begin
+   if (~aresetn | restart | finish_rds) begin
      for (m = 0; m < MMV_OUT; m = m + 1) begin
         pos[m] = 0;
      end
@@ -523,8 +504,8 @@ end
 
 
 //4
-always @(posedge clk) begin
-   if (~resetn | restart | finish_rds) begin
+always @(posedge aclk) begin
+   if (~aresetn | restart | finish_rds) begin
       buffer_full_i <= 0;
    end else begin
       buffer_full_i <= buffer_full;
@@ -533,8 +514,8 @@ end
   
 //5
 // process to write data
-always @(posedge clk) begin
-   if (~resetn | restart | finish_rds) begin
+always @(posedge aclk) begin
+   if (~aresetn | restart | finish_rds) begin
       counter <= 0;
       buffer_full <= 0;
       input_pixel <= 0;  
@@ -551,8 +532,8 @@ always @(posedge clk) begin
    end
 end
 //6
-always @(posedge clk) begin
-   if (~resetn | restart | finish_rds) begin
+always @(posedge aclk) begin
+   if (~aresetn | restart | finish_rds) begin
       ch_ptr <= 0;  
    end else begin
       if (inc_ch_ptr) begin
@@ -565,9 +546,9 @@ always @(posedge clk) begin
    end
 end
 
-always @(posedge clk) begin : kh_kw_tracker
+always @(posedge aclk) begin : kh_kw_tracker
    integer s;
-   if (~resetn | restart |  finish_rds) begin
+   if (~aresetn | restart |  finish_rds) begin
       for(s = 0; s < MMV_OUT; s = s + 1) begin
       kw_tracker[s] <= 0;
       kh_tracker[s] <= 0;
@@ -593,9 +574,9 @@ always @(posedge clk) begin : kh_kw_tracker
 end
 
 //7
-always @(posedge clk) begin : kh_kw
+always @(posedge aclk) begin : kh_kw
    integer s;
-   if (~resetn | restart | finish_rds) begin
+   if (~aresetn | restart | finish_rds) begin
       kw <= 0;
       kh <= 0;
       for(s = 0; s < MMV_OUT; s = s + 1)
@@ -617,10 +598,10 @@ end
 
 //8
 
-always @(posedge clk) begin : column_trackers
+always @(posedge aclk) begin : column_trackers
    //reg [$clog2(MMV_OUT) - 1:0] i;
    integer t;
-   if(~resetn | restart | finish_rds) begin
+   if(~aresetn | restart | finish_rds) begin
        for(t = 0; t < MMV_OUT; t = t + 1) begin
          ofm_column_tracker[t] <= t;
          ofm_row_tracker[t] <= 0;
@@ -654,10 +635,10 @@ always @(posedge clk) begin : column_trackers
    end            
 end
 
-always @(posedge clk) begin : kernel_row_trackers
+always @(posedge aclk) begin : kernel_row_trackers
    //reg [$clog2(MMV_OUT) - 1:0] i;
    integer t;
-   if(~resetn | restart | finish_rds) begin
+   if(~aresetn | restart | finish_rds) begin
       kernel_row_tracker <= 0;
    end else begin
    if (valid_ptr_vals && inc_start_pos == KERNEL_WIDTH*KERNEL_HEIGHT*EFF_CHANNELS - 2) begin
@@ -679,9 +660,9 @@ always @(posedge clk) begin : kernel_row_trackers
 end
 //9
 //DWS CAREFUL)
-always @(posedge clk) begin : col_tracker_adv
+always @(posedge aclk) begin : col_tracker_adv
    integer i;
-   if(~resetn | restart | finish_rds) begin
+   if(~aresetn | restart | finish_rds) begin
       if(MMV_IN == 1 || EFF_CHANNELS == 1)
          for(i = 0 ; i < MMV_OUT; i = i + 1) 
             if(i <= PADDING_WIDTH)
@@ -742,11 +723,11 @@ end
 
 
 //10
-always @(posedge clk) begin : starting_pos_blk
+always @(posedge aclk) begin : starting_pos_blk
 integer r;
 
    //reg [$clog2(MMV_OUT) - 1:0] i;
-   if (~resetn | restart | finish_rds) begin
+   if (~aresetn | restart | finish_rds) begin
       for (r = 0; r < MMV_OUT; r = r + 1) begin
          starting_pos[r] <= 0;
       end
@@ -763,9 +744,9 @@ end
 
 
 //11
-always @(posedge clk) begin : start_pos_i_blk
+always @(posedge aclk) begin : start_pos_i_blk
    integer i;
-   if (~resetn |restart | finish_rds) begin
+   if (~aresetn |restart | finish_rds) begin
       if(MMV_IN == 1 || EFF_CHANNELS == 1)
          for(i = 0 ; i < MMV_OUT; i = i + 1) 
             if(i <= PADDING_WIDTH)
@@ -821,9 +802,9 @@ always @(posedge clk) begin : start_pos_i_blk
    end
 end
 //12
-always @(posedge clk) begin : mmvshift_blk
+always @(posedge aclk) begin : mmvshift_blk
    integer n;
-   if (~resetn | restart | finish_rds) begin 
+   if (~aresetn | restart | finish_rds) begin 
       for(n = 0; n < MMV_OUT; n = n + 1) begin 
       mmvshift[n] <= 0;
       end

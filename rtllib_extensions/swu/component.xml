@@ -294,9 +294,14 @@
         <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.SIMD">1</spirit:value>
       </spirit:modelParameter>
       <spirit:modelParameter spirit:dataType="integer">
-        <spirit:name>STRIDE</spirit:name>
+        <spirit:name>STRIDE_HT</spirit:name>
         <spirit:displayName>Stride</spirit:displayName>
-        <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.STRIDE">1</spirit:value>
+        <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.STRIDE_HT">1</spirit:value>
+      </spirit:modelParameter>
+      <spirit:modelParameter spirit:dataType="integer">
+        <spirit:name>STRIDE_WT</spirit:name>
+        <spirit:displayName>Stride</spirit:displayName>
+        <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.STRIDE_WT">1</spirit:value>
       </spirit:modelParameter>
       <spirit:modelParameter spirit:dataType="integer">
         <spirit:name>IFMChannels</spirit:name>
@@ -363,16 +368,6 @@
         <spirit:displayName>Mmv Out</spirit:displayName>
         <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.MMV_OUT">1</spirit:value>
       </spirit:modelParameter>
-      <spirit:modelParameter spirit:dataType="integer">
-        <spirit:name>BUFFER_SIZE</spirit:name>
-        <spirit:displayName>Buffer Size</spirit:displayName>
-        <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.BUFFER_SIZE">20</spirit:value>
-      </spirit:modelParameter>
-      <spirit:modelParameter spirit:dataType="integer">
-        <spirit:name>OFMDIM_MOD_MMV</spirit:name>
-        <spirit:displayName>Ofmdim Mod Mmv</spirit:displayName>
-        <spirit:value spirit:format="long" spirit:resolve="generated" spirit:id="MODELPARAM_VALUE.OFMDIM_MOD_MMV">0</spirit:value>
-      </spirit:modelParameter>
     </spirit:modelParameters>
   </spirit:model>
   <spirit:choices>
@@ -385,16 +380,6 @@
   <spirit:fileSets>
     <spirit:fileSet>
       <spirit:name>xilinx_anylanguagesynthesis_view_fileset</spirit:name>
-      <spirit:file>
-        <spirit:name>hdl/wr_control.v</spirit:name>
-        <spirit:fileType>verilogSource</spirit:fileType>
-        <spirit:logicalName>xil_defaultlib</spirit:logicalName>
-      </spirit:file>
-      <spirit:file>
-        <spirit:name>hdl/rd_control.v</spirit:name>
-        <spirit:fileType>verilogSource</spirit:fileType>
-        <spirit:logicalName>xil_defaultlib</spirit:logicalName>
-      </spirit:file>
       <spirit:file>
         <spirit:name>hdl/swu.v</spirit:name>
         <spirit:fileType>verilogSource</spirit:fileType>
@@ -409,18 +394,6 @@
     </spirit:fileSet>
     <spirit:fileSet>
       <spirit:name>xilinx_anylanguagebehavioralsimulation_view_fileset</spirit:name>
-      <spirit:file>
-        <spirit:name>hdl/wr_control.v</spirit:name>
-        <spirit:fileType>verilogSource</spirit:fileType>
-        <spirit:userFileType>USED_IN_ipstatic</spirit:userFileType>
-        <spirit:logicalName>xil_defaultlib</spirit:logicalName>
-      </spirit:file>
-      <spirit:file>
-        <spirit:name>hdl/rd_control.v</spirit:name>
-        <spirit:fileType>verilogSource</spirit:fileType>
-        <spirit:userFileType>USED_IN_ipstatic</spirit:userFileType>
-        <spirit:logicalName>xil_defaultlib</spirit:logicalName>
-      </spirit:file>
       <spirit:file>
         <spirit:name>hdl/swu.v</spirit:name>
         <spirit:fileType>verilogSource</spirit:fileType>
@@ -452,9 +425,14 @@
       <spirit:value spirit:format="long" spirit:resolve="user" spirit:id="PARAM_VALUE.SIMD">1</spirit:value>
     </spirit:parameter>
     <spirit:parameter>
-      <spirit:name>STRIDE</spirit:name>
+      <spirit:name>STRIDE_HT</spirit:name>
       <spirit:displayName>Stride</spirit:displayName>
-      <spirit:value spirit:format="long" spirit:resolve="user" spirit:id="PARAM_VALUE.STRIDE">1</spirit:value>
+      <spirit:value spirit:format="long" spirit:resolve="user" spirit:id="PARAM_VALUE.STRIDE_HT">1</spirit:value>
+    </spirit:parameter>
+    <spirit:parameter>
+      <spirit:name>STRIDE_WT</spirit:name>
+      <spirit:displayName>Stride</spirit:displayName>
+      <spirit:value spirit:format="long" spirit:resolve="user" spirit:id="PARAM_VALUE.STRIDE_WT">1</spirit:value>
     </spirit:parameter>
     <spirit:parameter>
       <spirit:name>IFMChannels</spirit:name>
@@ -514,7 +492,7 @@
     <spirit:parameter>
       <spirit:name>MMV_IN</spirit:name>
       <spirit:displayName>Mmv In</spirit:displayName>
-      <spirit:value spirit:format="long" spirit:resolve="user" spirit:id="PARAM_VALUE.MMV_IN">2</spirit:value>
+      <spirit:value spirit:format="long" spirit:resolve="user" spirit:id="PARAM_VALUE.MMV_IN">1</spirit:value>
     </spirit:parameter>
     <spirit:parameter>
       <spirit:name>MMV_OUT</spirit:name>
@@ -522,18 +500,8 @@
       <spirit:value spirit:format="long" spirit:resolve="user" spirit:id="PARAM_VALUE.MMV_OUT">1</spirit:value>
     </spirit:parameter>
     <spirit:parameter>
-      <spirit:name>BUFFER_SIZE</spirit:name>
-      <spirit:displayName>Buffer Size</spirit:displayName>
-      <spirit:value spirit:format="long" spirit:resolve="user" spirit:id="PARAM_VALUE.BUFFER_SIZE">20</spirit:value>
-    </spirit:parameter>
-    <spirit:parameter>
-      <spirit:name>OFMDIM_MOD_MMV</spirit:name>
-      <spirit:displayName>Ofmdim Mod Mmv</spirit:displayName>
-      <spirit:value spirit:format="long" spirit:resolve="user" spirit:id="PARAM_VALUE.OFMDIM_MOD_MMV">0</spirit:value>
-    </spirit:parameter>
-    <spirit:parameter>
       <spirit:name>Component_Name</spirit:name>
-      <spirit:value spirit:resolve="user" spirit:id="PARAM_VALUE.Component_Name" spirit:order="1">mmv_input_swu_v9_v1_0</spirit:value>
+      <spirit:value spirit:resolve="user" spirit:id="PARAM_VALUE.Component_Name" spirit:order="1">swu_v1_0</spirit:value>
     </spirit:parameter>
   </spirit:parameters>
   <spirit:vendorExtensions>
