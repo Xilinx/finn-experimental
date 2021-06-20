@@ -774,7 +774,7 @@ class StreamingFCLayer_MMV_FG_Batch(HLSCustomOp):
         wwidth_padded=roundup_to_integer_multiple(wwidth, 8)
 
         # weight transport subhierarchy
-        cmd += axis_gather_bcast_scatter("weight_transport", 1, mmv, pe, wwidth_padded//8, parent_hier=node_name)
+        cmd += axis_gather_bcast_scatter("weight_transport", 1, mmv, pe, wwidth, parent_hier=node_name)
         #connect it to input/clk/rst
         cmd.append(
             "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/weight_transport/aclk]"
@@ -857,7 +857,7 @@ class StreamingFCLayer_MMV_FG_Batch(HLSCustomOp):
         # instantiate input buffer(s) and transport tree(s)
         if is_vvau:
             #instantiate a splitter
-            cmd += axis_gather_bcast_scatter("vvau_act_transport", 1, mmv, pe, (iwidth//8), parent_hier=node_name)
+            cmd += axis_gather_bcast_scatter("vvau_act_transport", 1, mmv, pe, iwidth, parent_hier=node_name)
             #connect it to input/clk/rst
             cmd.append(
                 "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/vvau_act_transport/aclk]"
@@ -874,7 +874,7 @@ class StreamingFCLayer_MMV_FG_Batch(HLSCustomOp):
         else:
             # instantiate a splitter to break the stream into MMV chunks if needed
             if mmv>1:
-                cmd += axis_gather_bcast_scatter("mvau_immv_transport", 1, mmv, 1, (iwidth//8), parent_hier=node_name)
+                cmd += axis_gather_bcast_scatter("mvau_immv_transport", 1, mmv, 1, iwidth, parent_hier=node_name)
                 #connect it to input/clk/rst
                 cmd.append(
                     "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/mvau_immv_transport/aclk]"
@@ -912,7 +912,7 @@ class StreamingFCLayer_MMV_FG_Batch(HLSCustomOp):
                         % (node_name, din_name, node_name, m)
                     )
                 # instantiate a bcast network
-                cmd += axis_gather_bcast_scatter("mvau_act_transport_"+str(m), 1, pe, 1, (iwidth//8)//mmv, parent_hier=node_name)
+                cmd += axis_gather_bcast_scatter("mvau_act_transport_"+str(m), 1, pe, 1, iwidth//mmv, parent_hier=node_name)
                 #connect it to input/clk/rst
                 cmd.append(
                     "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/mvau_act_transport_%d/aclk]"

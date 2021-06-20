@@ -57,101 +57,173 @@ from finn.transformation.fpgadataflow.create_dataflow_partition import (
 from finn.transformation.fpgadataflow.create_stitched_ip import CreateStitchedIP
 from finn.transformation.fpgadataflow.make_finegrained import MakeFinegrained
 
-# conv_config  kernel_size,stride, pad
-
-#    "conv_config", [(1, 2, 0), (1, 3, 0), (3, 2, 1), (3, 1, 0), (3, 1, 1), (5, 2, 1)]
-@pytest.mark.parametrize(
-    "conv_config", [(3, 2, 1), (3, 1, 0), (3, 1, 1), (5, 2, 1)]
+from finn.util.test import (
+    get_trained_network_and_ishape,
+    load_test_checkpoint_or_skip,
 )
-@pytest.mark.parametrize("depthwise", [False, True])
-def test_convert_to_finegrained(conv_config, depthwise):
-    kernel_size, stride, pad = conv_config
-    np.random.seed(0)
-    idt = DataType.UINT4
+import brevitas.onnx as bo
+import os
 
-    in_feature_dim = 7
-    in_chn = 16
+from finn.transformation.general import (
+    RemoveUnusedTensors,
+    RemoveStaticGraphInputs,
+    GiveReadableTensorNames,
+    GiveUniqueNodeNames,
+)
+from finn.transformation.infer_datatypes import InferDataTypes
+from finn.transformation.infer_shapes import InferShapes
+from finn.transformation.streamline import Streamline
+from finn.transformation.fpgadataflow.annotate_resources import AnnotateResources
+from finn.transformation.infer_data_layouts import InferDataLayouts
+from finn.transformation.move_reshape import RemoveCNVtoFCFlatten
+from finn.transformation.lower_convs_to_matmul import LowerConvsToMatMul
+from finn.transformation.streamline.reorder import (
+    MakeMaxPoolNHWC,
+    MoveScalarLinearPastInvariants,
+)
+import finn.transformation.streamline.absorb as absorb
+from finn.transformation.fold_constants import FoldConstants
+from finn.transformation.bipolar_to_xnor import ConvertBipolarMatMulToXnorPopcount
+from finn.transformation.fpgadataflow.set_folding import SetFolding
+from finn.transformation.fpgadataflow.create_dataflow_partition import CreateDataflowPartition
+from finn.transformation.fpgadataflow.insert_dwc import InsertDWC
+from finn.transformation.fpgadataflow.insert_fifo import InsertFIFO
 
-    if depthwise is True:
-        group = out_chn = in_chn
-        conv_param_shape = [out_chn, 1, kernel_size, kernel_size]
-    else:
-        group = 1
-        out_chn = 20
-        conv_param_shape = [out_chn, in_chn, kernel_size, kernel_size]
-
-    total_pad = 2 * pad
-    out_feature_dim = compute_conv_output_dim(
-        in_feature_dim, kernel_size, stride, total_pad
-    )
-
-    input_shape = [1, in_chn, in_feature_dim, in_feature_dim]
-    output_shape = [1, out_chn, out_feature_dim, out_feature_dim]
-
-    conv_weight_dt = DataType.UINT4
-
-    conv_config = {}
-    conv_config["dilations"] = [1, 1]
-    conv_config["group"] = group
-    conv_config["kernel_shape"] = [kernel_size, kernel_size]
-    conv_config["pads"] = [pad, pad, pad, pad]
-    conv_config["strides"] = [stride, stride]
-
-    top_in = helper.make_tensor_value_info("top_in", TensorProto.FLOAT, input_shape)
-    top_out = helper.make_tensor_value_info("top_out", TensorProto.FLOAT, output_shape)
-    value_info = [
-        helper.make_tensor_value_info("p1", TensorProto.FLOAT, conv_param_shape)
+def fold_lfc(model):
+    fc_layers = model.get_nodes_by_op_type("StreamingFCLayer_Batch")
+    # (PE, SIMD, ramstyle) for each layer
+    config = [
+        (32, 49, "block"),
+        (64, 32, "auto"),
+        (32, 64, "auto"),
+        (10, 8, "distributed"),
     ]
+    for fcl, (pe, simd, ramstyle) in zip(fc_layers, config):
+        fcl_inst = getCustomOp(fcl)
+        fcl_inst.set_nodeattr("PE", pe)
+        fcl_inst.set_nodeattr("SIMD", simd)
+        fcl_inst.set_nodeattr("ram_style", ramstyle)
+        fcl_inst.set_nodeattr("runtime_writeable_weights", 1)
 
-    modelproto = helper.make_model(
-        helper.make_graph(
-            name="conv_test",
-            inputs=[top_in],
-            outputs=[top_out],
-            value_info=value_info,
-            nodes=[
-                helper.make_node("Conv", ["top_in", "p1"], ["top_out"], **conv_config)
-            ],
-        )
-    )
+    thr_layers = model.get_nodes_by_op_type("Thresholding_Batch")
+    for i in range(len(thr_layers)):
+        thr_inst = getCustomOp(thr_layers[i])
+        pe = config[i][0]
+        thr_inst.set_nodeattr("PE", pe)
+    return model
 
-    model = ModelWrapper(modelproto)
-    model.set_tensor_datatype("top_in", idt)
-    model.set_tensor_datatype("top_out", idt)
-    model.set_tensor_datatype("p1", conv_weight_dt)
-    model.set_initializer("p1", gen_finn_dt_tensor(conv_weight_dt, conv_param_shape))
 
+def fold_cnv(model):
+    fc_layers = model.get_nodes_by_op_type("StreamingFCLayer_Batch")
+    # each tuple is (PE, SIMD) for a layer
+    folding = [
+        (16, 3),
+        (32, 32),
+        (16, 32),
+        (16, 32),
+        (4, 32),
+        (1, 32),
+        (1, 4),
+        (1, 8),
+        (5, 1),
+    ]
+    for fcl, (pe, simd) in zip(fc_layers, folding):
+        fcl_inst = getCustomOp(fcl)
+        fcl_inst.set_nodeattr("PE", pe)
+        fcl_inst.set_nodeattr("SIMD", simd)
+
+    swg_layers = model.get_nodes_by_op_type("ConvolutionInputGenerator")
+    for i in range(len(swg_layers)):
+        swg_inst = getCustomOp(swg_layers[i])
+        simd = folding[i][1]
+        swg_inst.set_nodeattr("SIMD", simd)
+
+    thr_layers = model.get_nodes_by_op_type("Thresholding_Batch")
+    for i in range(len(thr_layers)):
+        thr_inst = getCustomOp(thr_layers[i])
+        pe = folding[i][0]
+        thr_inst.set_nodeattr("PE", pe)
+    return model
+
+
+@pytest.mark.parametrize(
+    "bnn_config", [("cnv", 1, 1), ("lfc", 1, 1)]#, ("mobilenet", 4, 4)]
+)
+@pytest.mark.parametrize(
+    "mmode", ["const", "decoupled", "external"]
+)
+@pytest.mark.parametrize(
+    "ext_act", [True, False]
+)
+def test_convert_to_finegrained(bnn_config, mmode, ext_act):
+    net, wb, ab = bnn_config
+
+    (model, ishape) = get_trained_network_and_ishape(net, wb, ab)
+    chkpt_name = os.environ["FINN_BUILD_DIR"] + "/end2end_%s_w%da%d.onnx" % (net, wb, ab)
+    bo.export_finn_onnx(model, ishape, chkpt_name)
+    model = load_test_checkpoint_or_skip(chkpt_name)
+
+    model = model.transform(InferShapes())
+    model = model.transform(FoldConstants())
+    model = model.transform(GiveUniqueNodeNames())
+    model = model.transform(GiveReadableTensorNames())
+    model = model.transform(InferDataTypes())
+    model = model.transform(RemoveStaticGraphInputs())
+    model = model.transform(absorb.AbsorbSignBiasIntoMultiThreshold())
+    model = model.transform(MoveScalarLinearPastInvariants())
+    model = model.transform(Streamline())
+    model = model.transform(LowerConvsToMatMul())
+    model = model.transform(MakeMaxPoolNHWC())
+    model = model.transform(absorb.AbsorbTransposeIntoMultiThreshold())
+    model = model.transform(ConvertBipolarMatMulToXnorPopcount())
+    model = model.transform(Streamline())
+
+    model = model.transform(to_hls.InferConvInpGen())
+    if ext_act:
+        model = model.transform(to_hls.InferThresholdingLayer())
+
+    model = model.transform(to_hls.InferVVAU())
+    model = model.transform(to_hls.InferStreamingMaxPool())
+    model = model.transform(to_hls.InferQuantizedStreamingFCLayer(mmode))
+    model = model.transform(to_hls.InferBinaryStreamingFCLayer(mmode))
+
+    model = model.transform(GiveUniqueNodeNames())
     model = model.transform(InferShapes())
     model = model.transform(InferDataTypes())
 
-    new_model = model.transform(LowerConvsToMatMul())
-    new_model = new_model.transform(to_hls.InferConvInpGen())
-    #infer thresholding layers first, to ensure standalone thresholding
-    new_model = new_model.transform(to_hls.InferThresholdingLayer())
-    if depthwise is True:
-        new_model = new_model.transform(to_hls.InferVVAU())
-    else:
-        new_model = new_model.transform(to_hls.InferQuantizedStreamingFCLayer())
-        fc_node = new_model.get_nodes_by_op_type("StreamingFCLayer_Batch")[0]
-        fc_inst = getCustomOp(fc_node)
-        mw = fc_inst.get_nodeattr("MW")
-        mh = fc_inst.get_nodeattr("MH")
-        pe_cands = list(filter(lambda x: mh % x == 0, range(2, mh + 1)))
-        simd_cands = list(filter(lambda x: mw % x == 0, range(2, mw + 1)))
-        fc_inst.set_nodeattr("PE", pe_cands[0])
-        fc_inst.set_nodeattr("SIMD", simd_cands[0])
+    model = model.transform(RemoveCNVtoFCFlatten())
+    model = model.transform(CreateDataflowPartition())
+    for node in model.graph.node:
+        if node.op_type == "StreamingDataflowPartition":
+            model = ModelWrapper(getCustomOp(node).get_nodeattr("model"))
 
-    new_model = new_model.transform(GiveUniqueNodeNames())
-    new_model = new_model.transform(InferShapes())
-    new_model = new_model.transform(InferDataTypes())
+    # fold
+    if net == "cnv":
+        model = fold_cnv(model)
+    elif net == "lfc":
+        model = fold_lfc(model)
 
-    new_model = new_model.transform(MakeFinegrained())
-    new_model = new_model.transform(GiveUniqueNodeNames())
+    # force FIFOs
+    for node in model.graph.node:
+        getCustomOp(node).set_nodeattr("outFIFODepth",128)
+        getCustomOp(node).set_nodeattr("inFIFODepth",128)
 
-    # try to exec. This should fail
-    new_model = new_model.transform(PrepareIP("xc7z020clg400-1", 5))
-    new_model = new_model.transform(HLSSynthIP())
-    new_model = new_model.transform(CreateDataflowPartition())
-    df_model = ModelWrapper(getCustomOp(new_model.graph.node[1]).get_nodeattr("model"))
+    model = model.transform(GiveUniqueNodeNames())
+    model = model.transform(GiveReadableTensorNames())
+    model = model.transform(InsertDWC())
+    model = model.transform(GiveUniqueNodeNames())
+    model = model.transform(GiveReadableTensorNames())
+    model = model.transform(InsertFIFO())
+    model = model.transform(GiveUniqueNodeNames())
+    model = model.transform(GiveReadableTensorNames())
+
     import pdb; pdb.set_trace()
-    df_model = df_model.transform(CreateStitchedIP("xc7z020clg400-1", 5))
+
+    model = model.transform(MakeFinegrained())
+
+
+    model = model.transform(GiveUniqueNodeNames())
+    model = model.transform(GiveReadableTensorNames())
+    model = model.transform(PrepareIP("xc7z020clg400-1", 5))
+    model = model.transform(HLSSynthIP())
+    model = model.transform(CreateStitchedIP("xc7z020clg400-1", 5))

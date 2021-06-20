@@ -159,6 +159,7 @@ class ConvolutionInputGenerator_MMV(HLSCustomOp):
         simd = self.get_nodeattr("SIMD")
         k = self.get_nodeattr("ConvKernelDim")
         mmvi = self.get_nodeattr("MMVI")
+        mmvo = self.get_nodeattr("MMVO")
         stride = self.get_nodeattr("Stride")
         precision = self.get_input_datatype().bitwidth()
         # create a hierarchy for this layer, with the same port names
@@ -186,7 +187,8 @@ class ConvolutionInputGenerator_MMV(HLSCustomOp):
                                         CONFIG.OFMWidth {%d} \
                                         CONFIG.OFMHeight {%d} \
                                         CONFIG.IP_PRECISION {%d}\
-                                        CONFIG.MMV {%d}\
+                                        CONFIG.MMVI {%d}\
+                                        CONFIG.MMVO {%d}\
                                         CONFIG.BUFFER_SIZE {%d}\
                                         CONFIG.OFMDIM_MOD_MMV {%d}] \
                                         [get_bd_cells %s]" % (simd,
@@ -202,6 +204,7 @@ class ConvolutionInputGenerator_MMV(HLSCustomOp):
                                                             ofmdim[1],
                                                             precision,
                                                             mmvi,
+                                                            mmvo,
                                                             buffer_size,
                                                             OFMDIM_MOD_MMV,
                                                             node_name

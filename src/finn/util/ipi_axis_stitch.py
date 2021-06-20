@@ -274,9 +274,170 @@ def axis_scatter(new_hier, nsplits, obits, parent_hier=None):
             cmd.append("connect_bd_net [get_bd_pins %s/aclk] [get_bd_pins %s/aclk]" % (hier_name, cell_name))
             cmd.append("connect_bd_net [get_bd_pins %s/aresetn] [get_bd_pins %s/aresetn]" % (hier_name, cell_name))
 
+    return cmd
+
+
+def axis_unpack(new_hier, nelems, ebits, parent_hier=None):
+    # unpacks an input AXI stream carrying an array of nelems elements, 
+    # each ebits in size, by spacing out the elements into (multi-)byte chunks
+    padding_bits = (8 - ebits%8)%8
+    chunk_bits = math.ceil(ebits/8)
+    obytes = nelems*int(chunk_bits)
+    ibytes = int(math.ceil(nelems*ebits/8))
+    cmd = []
+    if parent_hier is not None:
+        hier_name = parent_hier + "/" + new_hier
+    else:
+        hier_name = new_hier
+    # Create hierarchy
+    cmd.append("create_bd_cell -type hier %s" %(hier_name))
+
+    # Create interface ports (AXI Stream in/out)
+    cmd.append("create_bd_pin -dir I -type clk %s/aclk" % (hier_name))
+    cmd.append("create_bd_pin -dir I -type rst %s/aresetn" % (hier_name))
+    cmd.append("create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:axis_rtl:1.0 %s/m_axis" % (hier_name))
+    cmd.append("create_bd_intf_pin -mode Slave -vlnv xilinx.com:interface:axis_rtl:1.0 %s/s_axis" % (hier_name))
+
+    if padding_bits == 0:
+        #no need to repack anything, connect in with out
+        cmd.append("connect_bd_intf_net [get_bd_intf_pins %s/m_axis] [get_bd_intf_pins %s/s_axis]" % (hier_name, hier_name))       
+        return cmd
+
+    # use an AXI subset converter to do the spacing
+    cell_name = hier_name + "/unpack_ssc"
+    cmd.append("create_bd_cell -type ip -vlnv xilinx.com:ip:axis_subset_converter:1.1 %s" % (cell_name))
+    cmd.append("set_property -dict [list CONFIG.M_TDATA_NUM_BYTES.VALUE_SRC USER CONFIG.S_TDATA_NUM_BYTES.VALUE_SRC USER] [get_bd_cells %s]" %(cell_name))
+    cmd.append("set_property -dict [list CONFIG.S_TDATA_NUM_BYTES {%d} CONFIG.M_TDATA_NUM_BYTES {%d}] [get_bd_cells %s]" %(ibytes, obytes, cell_name))
+
+    remap_string = []
+    for j in range(nelems):
+        bit_offset = j*ebits
+        remap_string.append("tdata[%d:%d]" % (bit_offset+ebits-1, bit_offset))
+        if padding_bits != 0:
+            remap_string.append("%d'b" %(padding_bits) + "0"*padding_bits)
+    remap_string = ','.join(reversed(remap_string))
+    cmd.append("set_property -dict [list CONFIG.TDATA_REMAP {%s}] [get_bd_cells %s]" %(remap_string, cell_name))
+
+    cmd.append("connect_bd_intf_net [get_bd_intf_pins %s/S_AXIS] [get_bd_intf_pins %s/s_axis]" % (cell_name, hier_name))       
+    cmd.append("connect_bd_intf_net [get_bd_intf_pins %s/M_AXIS] [get_bd_intf_pins %s/m_axis]" % (cell_name, hier_name))
+    cmd.append("connect_bd_net [get_bd_pins %s/aclk] [get_bd_pins %s/aclk]" % (hier_name, cell_name))
+    cmd.append("connect_bd_net [get_bd_pins %s/aresetn] [get_bd_pins %s/aresetn]" % (hier_name, cell_name))
 
     return cmd
 
-if __name__ == "__main__":
-    import sys
-    print("\n".join(axis_gather_bcast_scatter("foo", int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]))))
+
+def axis_pack(new_hier, nelems, ebits, parent_hier=None):
+    # packs an input AXI stream carrying an array of nelems elements, 
+    # each ebits in size plus padding, by removing the padding
+    padding_bits = (8 - ebits%8)%8
+    chunk_bits = math.ceil(ebits/8)
+    ibytes = nelems*int(chunk_bits)
+    obytes = int(math.ceil(nelems*ebits/8))
+    opad_bits = obytes*8 - nelems*ebits
+    cmd = []
+    if parent_hier is not None:
+        hier_name = parent_hier + "/" + new_hier
+    else:
+        hier_name = new_hier
+    # Create hierarchy
+    cmd.append("create_bd_cell -type hier %s" %(hier_name))
+
+    # Create interface ports (AXI Stream in/out)
+    cmd.append("create_bd_pin -dir I -type clk %s/aclk" % (hier_name))
+    cmd.append("create_bd_pin -dir I -type rst %s/aresetn" % (hier_name))
+    cmd.append("create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:axis_rtl:1.0 %s/m_axis" % (hier_name))
+    cmd.append("create_bd_intf_pin -mode Slave -vlnv xilinx.com:interface:axis_rtl:1.0 %s/s_axis" % (hier_name))
+
+    if padding_bits == 0:
+        #no need to pack anything, connect in with out
+        cmd.append("connect_bd_intf_net [get_bd_intf_pins %s/m_axis] [get_bd_intf_pins %s/s_axis]" % (hier_name, hier_name))       
+        return cmd
+
+    # use an AXI subset converter to do the spacing
+    cell_name = hier_name + "/pack_ssc"
+    cmd.append("create_bd_cell -type ip -vlnv xilinx.com:ip:axis_subset_converter:1.1 %s" % (cell_name))
+    cmd.append("set_property -dict [list CONFIG.M_TDATA_NUM_BYTES.VALUE_SRC USER CONFIG.S_TDATA_NUM_BYTES.VALUE_SRC USER] [get_bd_cells %s]" %(cell_name))
+    cmd.append("set_property -dict [list CONFIG.S_TDATA_NUM_BYTES {%d} CONFIG.M_TDATA_NUM_BYTES {%d}] [get_bd_cells %s]" %(ibytes, obytes, cell_name))
+
+    remap_string = []
+    for j in range(nelems):
+        bit_offset = j*(ebits+padding_bits)
+        remap_string.append("tdata[%d:%d]" % (bit_offset+ebits-1, bit_offset))
+    if opad_bits != 0: 
+        remap_string.append("%d'b" %(opad_bits) + "0"*opad_bits)
+    remap_string = ','.join(reversed(remap_string))
+    cmd.append("set_property -dict [list CONFIG.TDATA_REMAP {%s}] [get_bd_cells %s]" %(remap_string, cell_name))
+
+    cmd.append("connect_bd_intf_net [get_bd_intf_pins %s/S_AXIS] [get_bd_intf_pins %s/s_axis]" % (cell_name, hier_name))       
+    cmd.append("connect_bd_intf_net [get_bd_intf_pins %s/M_AXIS] [get_bd_intf_pins %s/m_axis]" % (cell_name, hier_name))
+    cmd.append("connect_bd_net [get_bd_pins %s/aclk] [get_bd_pins %s/aclk]" % (hier_name, cell_name))
+    cmd.append("connect_bd_net [get_bd_pins %s/aresetn] [get_bd_pins %s/aresetn]" % (hier_name, cell_name))
+
+    return cmd
+
+def axis_buffer(new_hier, depth, ebits, ram_style, parent_hier=None):
+    ebytes = int(math.ceil(ebits/8))
+    cmd = []
+    if parent_hier is not None:
+        hier_name = parent_hier + "/" + new_hier
+    else:
+        hier_name = new_hier
+    # Create hierarchy
+    cmd.append("create_bd_cell -type hier %s" %(hier_name))
+
+    # Create interface ports (AXI Stream in/out)
+    cmd.append("create_bd_pin -dir I -type clk %s/aclk" % (hier_name))
+    cmd.append("create_bd_pin -dir I -type rst %s/aresetn" % (hier_name))
+    cmd.append("create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:axis_rtl:1.0 %s/m_axis" % (hier_name))
+    cmd.append("create_bd_intf_pin -mode Slave -vlnv xilinx.com:interface:axis_rtl:1.0 %s/s_axis" % (hier_name))
+
+    if depth == 0:
+        #connect in to out and return
+        cmd.append(
+            "connect_bd_intf_net [get_bd_intf_pins %s/s_axis] "
+            "[get_bd_intf_pins %s/m_axis]" % (hier_name, hier_name)
+        )
+        return cmd
+
+    node_name = hier_name + "/fifo"
+    cmd.append(
+        "create_bd_cell -type ip "
+        "-vlnv xilinx.com:ip:axis_data_fifo:2.0 %s" % node_name
+    )
+    cmd.append(
+        "set_property -dict [list CONFIG.FIFO_DEPTH {%d}] "
+        "[get_bd_cells %s]" % (int(2**(math.ceil(math.log(depth, 2)))), node_name)
+    )
+    cmd.append(
+        "set_property -dict [list CONFIG.FIFO_MEMORY_TYPE {%s}] "
+        "[get_bd_cells %s]" % (ram_style, node_name)
+    )
+    cmd.append(
+        "set_property -dict [list CONFIG.TDATA_NUM_BYTES {%d}] "
+        "[get_bd_cells %s]" % (ebytes, node_name)
+    )
+    cmd.append(
+        "connect_bd_intf_net [get_bd_intf_pins %s/M_AXIS] "
+        "[get_bd_intf_pins %s/m_axis]" % (node_name, hier_name)
+    )
+    cmd.append(
+        "connect_bd_intf_net [get_bd_intf_pins %s/S_AXIS] "
+        "[get_bd_intf_pins %s/s_axis]" % (node_name, hier_name)
+    )
+    cmd.append(
+        "connect_bd_net [get_bd_pins %s/aresetn] "
+        "[get_bd_pins %s/s_axis_aresetn]"
+        % (hier_name, node_name)
+    )
+    cmd.append(
+        "connect_bd_net [get_bd_pins %s/aclk] "
+        "[get_bd_pins %s/s_axis_aclk]" % (hier_name, node_name)
+    )
+
+    return cmd
+
+# if __name__ == "__main__":
+#     import sys
+#     cmd = axis_pack("foo", int(sys.argv[1]), int(sys.argv[2]))
+#     cmd += axis_unpack("bar", int(sys.argv[1]), int(sys.argv[2]))
+#     print("\n".join(cmd))
