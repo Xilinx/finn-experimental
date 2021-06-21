@@ -38,9 +38,8 @@ output m_axis_tvalid
 );
 
 localparam BUFFER_SIZE = STRIDE_HT * IFMWidth * IFMChannels/SIMD * KERNEL_HEIGHT;
-localparam OFMDIM_MOD_MMV = (OFMWidth/MMVI==0) ? 0 : 1; 
-localparam floor_O_BY_I = MMV0/MMVI;
-localparam ceil_O_BY_I = (MMVO+MMVI-1)/MMVI;
+localparam floor_O_BY_I = MMV_OUT/MMV_IN;
+localparam ceil_O_BY_I = (MMV_OUT+MMV_IN-1)/MMV_IN;
 
 localparam EFF_CHANNELS = IFMChannels/SIMD;
 localparam SIZEA = BUFFER_SIZE/MMV_IN;
