@@ -147,7 +147,7 @@ def fold_cnv(model):
 
 
 @pytest.mark.parametrize(
-    "bnn_config", [("cnv", 1, 1), ("lfc", 1, 1)]#, ("mobilenet", 4, 4)]
+    "bnn_config", [("cnv", 1, 1), ("lfc", 1, 1)]
 )
 @pytest.mark.parametrize(
     "mmode", ["const", "decoupled", "external"]
@@ -216,8 +216,6 @@ def test_convert_to_finegrained(bnn_config, mmode, ext_act):
     model = model.transform(InsertFIFO())
     model = model.transform(GiveUniqueNodeNames())
     model = model.transform(GiveReadableTensorNames())
-
-    import pdb; pdb.set_trace()
 
     model = model.transform(MakeFinegrained())
 
