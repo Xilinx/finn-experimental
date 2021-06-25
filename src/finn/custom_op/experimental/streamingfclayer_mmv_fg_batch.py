@@ -465,7 +465,7 @@ class StreamingFCLayer_MMV_FG_Batch(HLSCustomOp):
         if self.get_weight_datatype() == DataType.BIPOLAR:
             export_wdt = DataType.BINARY
 
-        elif "decoupled" in weight_file_mode:
+        if "decoupled" in weight_file_mode:
             # create a weight stream for various flavors of decoupled mode:
             # transpose weight tensor from (1, PE, WMEM, SIMD) to (1, WMEM, PE, SIMD)
             weight_tensor_unflipped = np.transpose(weight_tensor, (0, 2, 1, 3))
