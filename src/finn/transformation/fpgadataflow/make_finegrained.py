@@ -41,6 +41,7 @@ class MakeFinegrained(Transformation):
     def apply(self, model):
         graph = model.graph
         node_ind = 0
+       
         for node in graph.node:
             node_ind += 1
             # convert these layer types:
@@ -176,7 +177,7 @@ class MakeFinegrained(Transformation):
                     NumChannels = getCustomOp(node).get_nodeattr("NumChannels"),
                     PE = getCustomOp(node).get_nodeattr("PE"),
                     numSteps = getCustomOp(node).get_nodeattr("numSteps"),
-                    actVal = getCustomOp(node).get_nodeattr("ActVal"),
+                    ActVal = getCustomOp(node).get_nodeattr("ActVal"),
                     inputDataType = getCustomOp(node).get_nodeattr("inputDataType"),
                     weightDataType = getCustomOp(node).get_nodeattr("weightDataType"),
                     outputDataType = getCustomOp(node).get_nodeattr("outputDataType"),
