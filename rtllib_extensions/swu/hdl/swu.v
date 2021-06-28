@@ -40,25 +40,23 @@ module mmv_swu_rtl #(
 	parameter IP_PRECISION = 8,
 	parameter MMV_IN = 1,
 	parameter MMV_OUT = 1,
-	parameter S_BY_M = 0,
 	parameter DWS = 0,
-	parameter floor_O_BY_I = 1,
-	parameter ceil_O_BY_I = 1,
-	parameter ZEROPAD = 0,
-	parameter O_MOD_MMVI = 0)
+	parameter ZEROPAD = 0)
 
 
 (
 input clk,
 input resetn,
-input [MMV_IN * SIMD * IP_PRECISION - 1 : 0] ip_axis_tdata,
-input ip_axis_tvalid,
-output ip_axis_tready,
-output [MMV_OUT * SIMD * IP_PRECISION - 1 : 0] op_axis_tdata,
-input op_axis_tready,
-output op_axis_tvalid
+input [MMV_IN * SIMD * IP_PRECISION - 1 : 0] s_axis_tdata,
+input s_axis_tvalid,
+output s_axis_tready,
+output [MMV_OUT * SIMD * IP_PRECISION - 1 : 0] m_axis_tdata,
+input m_axis_tready,
+output m_axis_tvalid
     );
  localparam   BUFFER_SIZE = (STRIDE_HT - 1 + KERNEL_HEIGHT) * IFMWidth * IFMChannels/SIMD ;
+localparam floor_O_BY_I = MMV_OUT/MMV_IN;
+localparam ceil_O_BY_I = (MMV_OUT + MMV_IN-1)/MMV_IN;
 localparam EFF_CHANNELS = IFMChannels/SIMD;
 localparam SIZEA = BUFFER_SIZE/MMV_IN;
 localparam SIZEB = BUFFER_SIZE;
@@ -118,10 +116,10 @@ reg stride_toggle;
 //reg [log2(MMV_OUT) - 1:0] n;
 //reg [log2(MMV_OUT) - 1:0] o;
 integer m , n, o;
-assign ip_axis_tready = total_pending_rds != 0;
+assign s_axis_tready = total_pending_rds != 0;
 assign weA = s_axis_hs;
-assign ram_enq = op_axis_tready | ~q_valid;
-assign op_axis_tvalid = q_valid;
+assign ram_enq = m_axis_tready | ~q_valid;
+assign m_axis_tvalid = q_valid;
 assign enaB = start_write & !buffer_empty_i 
             & (enaB_q | ~r_valid) 
             & ((!ofm_row_tracker[0] <= PADDING_HEIGHT && ofm_column_tracker[0] > 0 && kh == KERNEL_HEIGHT - 2 && kw == KERNEL_WIDTH - 1 && ch_ptr == 0) 
@@ -131,8 +129,8 @@ assign enaB = start_write & !buffer_empty_i
             & (!(ofm_row_tracker[0] != 0 && ofm_column_tracker[0] == 0 && kh == KERNEL_HEIGHT - 2  && ch_ptr == 0) 
             || (crtcl_rd_cntr[0] * MMV_IN < (IFMWidth * EFF_CHANNELS - ((kw + 1) * EFF_CHANNELS) - ofm_column_tracker[MMV_OUT - 1])) & buffer_full);
 
-assign enaB_q = (op_axis_tready | ~q_valid);
-assign enaB_r = start_write & !buffer_empty_i & (op_axis_tready | ~r_valid);
+assign enaB_q = (m_axis_tready | ~q_valid);
+assign enaB_r = start_write & !buffer_empty_i & (m_axis_tready | ~r_valid);
 
 
 wire[MMV_OUT - 1 : 0] zeropad;
@@ -154,8 +152,8 @@ generate
    .clkB(clk),
    .addrA(counter),
    .addrB(pos[mi]),
-   .diA(ip_axis_tdata),
-   .doB(op_axis_tdata[(mi+1)*SIMD*IP_PRECISION-1 -: SIMD*IP_PRECISION]),
+   .diA(s_axis_tdata),
+   .doB(m_axis_tdata[(mi+1)*SIMD*IP_PRECISION-1 -: SIMD*IP_PRECISION]),
    .enaA(1),
    .enaB(enaB),
    .enaB_q(enaB_q),
@@ -166,9 +164,9 @@ generate
 endgenerate
 
 
-assign m_axis_hs = op_axis_tready && op_axis_tvalid;
-assign s_axis_hs = ip_axis_tready && ip_axis_tvalid;
-assign restart = op_axis_tready && op_axis_tvalid && buffer_empty;
+assign m_axis_hs = m_axis_tready && m_axis_tvalid;
+assign s_axis_hs = s_axis_tready && s_axis_tvalid;
+assign restart = m_axis_tready && m_axis_tvalid && buffer_empty;
 
 wire inc_pending_rd_gen;
 wire inc_pending_rd_last;
@@ -467,7 +465,7 @@ always @(posedge clk)
     else 
         enaB_reg <=  enaB;        
 //1
-//assign op_axis_tvalid = buffer_full_i && !buffer_empty_i;
+//assign m_axis_tvalid = buffer_full_i && !buffer_empty_i;
 always @(posedge clk) begin
 if (~resetn | finish_rds) begin
   buffer_empty_i <= 0;
