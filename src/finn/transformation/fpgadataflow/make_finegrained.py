@@ -41,7 +41,6 @@ class MakeFinegrained(Transformation):
     def apply(self, model):
         graph = model.graph
         node_ind = 0
-       
         for node in graph.node:
             node_ind += 1
             # convert these layer types:
@@ -50,7 +49,7 @@ class MakeFinegrained(Transformation):
             # StreamingFCLayer_Batch
             #   -emits a Thresholding_Batch if it had thresholding
             # Thresholding_Batch
-            if node.op_type == "FMPadding_Batch":
+            if node.op_type == "FMPadding_Batchno":
                 #iteratively remove everything between a padding node and the subsequent SWU
                 node_output = node.output[0]
                 consumer = model.find_producer(node_output)
@@ -60,7 +59,7 @@ class MakeFinegrained(Transformation):
                         graph.node.remove(consumer)
                         return (model, True)
 
-            if node.op_type == "ConvolutionInputGenerator":
+            if node.op_type == "ConvolutionInputGeneratorno":
                 node_input = node.input[0]
                 node_output = node.output[0]
                 # pick up existing SWU parameters
@@ -123,6 +122,11 @@ class MakeFinegrained(Transformation):
                 if not is_vvau:
                     if getCustomOp(node).get_nodeattr("runtime_writeable_weights") == 1:
                         continue
+                k = [3,3]
+                if is_vvau:
+                   k = getCustomOp(node).get_nodeattr("Kernel")
+                   channels = getCustomOp(node).get_nodeattr("Channels")
+                   dim = getCustomOp(node).get_nodeattr("Dim")
                 #TODO: decouple the activation if needed
                 assert getCustomOp(node).get_nodeattr("noActivation") == 1
                 # copy all relevant parameters to new node
@@ -141,21 +145,23 @@ class MakeFinegrained(Transformation):
                     backend="fpgadataflow",
                     PE = getCustomOp(node).get_nodeattr("PE"),
                     SIMD = 1 if is_vvau else getCustomOp(node).get_nodeattr("SIMD"),
-                    MW = -1 if is_vvau else getCustomOp(node).get_nodeattr("MW"),
-                    MH = -1 if is_vvau else getCustomOp(node).get_nodeattr("MH"),
+                    MW = k[0]*k[1] if is_vvau else getCustomOp(node).get_nodeattr("MW"),
+                    MH = channels if is_vvau else getCustomOp(node).get_nodeattr("MH"),
                     resType = getCustomOp(node).get_nodeattr("resType"),
-                    actVal = getCustomOp(node).get_nodeattr("ActVal"),
+                    ActVal = getCustomOp(node).get_nodeattr("ActVal"),
                     inputDataType = getCustomOp(node).get_nodeattr("inputDataType"),
                     weightDataType = getCustomOp(node).get_nodeattr("weightDataType"),
                     outputDataType = getCustomOp(node).get_nodeattr("outputDataType"),
                     accDataType = getCustomOp(node).get_nodeattr("accDataType"),
                     binaryXnorMode = 0 if is_vvau else getCustomOp(node).get_nodeattr("binaryXnorMode"),
-                    numInputVectors = -1 if is_vvau else getCustomOp(node).get_nodeattr("numInputVectors"),
+                    numInputVectors = list([1] + list(dim)) if is_vvau else getCustomOp(node).get_nodeattr("numInputVectors"),
                     mem_mode = "decoupled" if is_vvau else mmode,
                     ram_style = "auto" if is_vvau else getCustomOp(node).get_nodeattr("ram_style"),
                     ibuf_ram_style = "auto" if is_vvau else getCustomOp(node).get_nodeattr("ram_style"),
                     MMV = 1,
                     VVAU = 1 if is_vvau else 0,
+                    kernel_dim = k
+
                 )
                 graph.node.insert(node_ind, new_node)
                 # remove old nodes
@@ -184,12 +190,12 @@ class MakeFinegrained(Transformation):
                     numInputVectors = getCustomOp(node).get_nodeattr("numInputVectors"),
                     mem_mode = "decoupled",
                     ram_style = getCustomOp(node).get_nodeattr("ram_style"),
-                    MMV = 1,
                     runtime_writeable_weights = 0,
                 )
                 graph.node.insert(node_ind, new_node)
                 # remove old nodes
                 graph.node.remove(node)
+                #getCustomOp(node).set_nodeattr("mem_mode", "decoupled")
                 return (model, True)
 
             elif node.op_type == "StreamingDataWidthConverter_Batch":

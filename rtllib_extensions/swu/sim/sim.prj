@@ -1,6 +1,0 @@
-verilog xil_defaultlib \
-    ../hdl/asymmetric_ram.v \
-    ../hdl/rd_control.v \
-    ../hdl/wr_control.v \
-    ../hdl/swu.v \
-    tb.v \

@@ -78,6 +78,28 @@ class ConvolutionInputGenerator_MMV(HLSCustomOp):
         }
         my_attrs.update(super().get_nodeattr_types())
         return my_attrs
+    def get_folded_input_shape(self):
+        ifm_dim = self.get_nodeattr("IFMDim")
+        ifm_ch = self.get_nodeattr("IFMChannels")
+        simd = self.get_nodeattr("SIMD")
+        assert ifm_ch % simd == 0, "SIMD must divide"
+        wf = int(ifm_ch/simd)
+        folded_ishape = (1, ifm_dim[0], ifm_dim[1], wf, simd)
+        return folded_ishape
+
+    def get_folded_output_shape(self):
+        k = self.get_nodeattr("ConvKernelDim")
+        ifm_dim = self.get_nodeattr("IFMDim")
+        ifm_ch = self.get_nodeattr("IFMChannels")
+        stride = self.get_nodeattr("Stride")
+        simd = self.get_nodeattr("SIMD")
+        pad = 0
+        ofm_dim = compute_conv_output_dim(ifm_dim[0], k[0] , stride[0], pad)
+        assert ifm_ch % simd == 0, "SIMD must divide IFMChannels"
+        wf = int((k[0] *k[1] * ifm_ch)// simd)
+        folded_oshape = (1, ofm_dim, ofm_dim, wf, simd)
+        return folded_oshape
+    
 
     def get_instream_width(self):
         """Returns stream width, input and output stream width are equal for
@@ -167,7 +189,7 @@ class ConvolutionInputGenerator_MMV(HLSCustomOp):
         rst_name = self.get_verilog_top_module_intf_names()["rst"][0]
         dout_name = self.get_verilog_top_module_intf_names()["m_axis"][0][0]
         din_name = self.get_verilog_top_module_intf_names()["s_axis"][0][0]
-        cmd.append("create_bd_cell -type ip -vlnv xilinx.com:user:swu:1.0 %s" % (node_name))
+        cmd.append("create_bd_cell -type ip -vlnv user.org:user:mmv_swu_rtl:1.0 %s" % (node_name))
         padding_height = (ofmdim[1] - (ifmdim[1] - 2))//2
         padding_width = (ofmdim[0] - (ifmdim[0] - 2))//2
         buffer_size =  ifmdim[0] * (ifmch//simd) * k[1]

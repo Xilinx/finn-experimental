@@ -103,6 +103,7 @@ class StreamingFCLayer_MMV_FG_Batch(HLSCustomOp):
             ),
             "MMV" : ("i", False, 1),
             "VVAU": ("i", False, 0, {0, 1}),
+            "kernel_dim" : ("ints", True, [3,3])
         }
         my_attrs.update(super().get_nodeattr_types())
         return my_attrs
@@ -114,8 +115,8 @@ class StreamingFCLayer_MMV_FG_Batch(HLSCustomOp):
         pe = self.get_nodeattr("PE")
         simd = self.get_nodeattr("SIMD")
 
-        assert mh % pe == 0, "Requirement MH divisable by PE is violated."
-        assert mw % simd == 0, "Requirement MW divisable by SIMD is violated."
+        assert mh % pe == 0, "Requirement MH divisable by PE is violated. %d %d"%(mh,pe)
+        assert mw % simd == 0, "Requirement MW divisable by SIMD is violated.%d %d" % (mw,simd)
         wmem = mw * mh // (pe * simd)
         return wmem
 
@@ -266,12 +267,19 @@ class StreamingFCLayer_MMV_FG_Batch(HLSCustomOp):
 
     def get_instream_width(self):
         i_bits = self.get_input_datatype().bitwidth()
-        in_width = i_bits * self.get_nodeattr("SIMD") 
+        if self.get_nodeattr("VVAU"):
+          in_width = i_bits*self.get_nodeattr("PE")
+        else:
+          in_width = i_bits * self.get_nodeattr("SIMD") 
         return in_width
     #mod-fine
     def get_instream_width_padded(self):
         i_bits = self.get_input_datatype().bitwidth()
-        in_width = i_bits * self.get_nodeattr("SIMD") 
+        if self.get_nodeattr("VVAU"):
+          in_width = i_bits * self.get_nodeattr("PE")
+        else:
+          in_width = i_bits * self.get_nodeattr("SIMD") 
+ 
         return roundup_to_integer_multiple(in_width, 8)
 
     def get_outstream_width(self):
@@ -320,7 +328,14 @@ class StreamingFCLayer_MMV_FG_Batch(HLSCustomOp):
         simd = self.get_nodeattr("SIMD")
         sf = mw // simd
         vecs = list(self.get_nodeattr("numInputVectors"))
-        folded_input_shape = tuple(vecs + [sf, simd])
+        if self.get_nodeattr("VVAU"):
+          pe = self.get_nodeattr("PE")
+          nf = self.get_nodeattr("MH")//pe
+          folded_input_shape = tuple(vecs + [sf * nf, pe])
+        else:
+          folded_input_shape = tuple(vecs + [sf, simd])
+  
+           
         return folded_input_shape
 
     def get_folded_output_shape(self):
@@ -334,7 +349,11 @@ class StreamingFCLayer_MMV_FG_Batch(HLSCustomOp):
     def get_normal_input_shape(self):
         mw = self.get_nodeattr("MW")
         vecs = list(self.get_nodeattr("numInputVectors"))
-        normal_input_shape = tuple(vecs + [mw])
+        if self.get_nodeattr("VVAU"):
+          mh = self.get_nodeattr("MH")
+          normal_input_shape = tuple(vecs + [mw * mh])
+        else:
+          normal_input_shape = tuple(vecs + [mw])
         return normal_input_shape
 
     def get_normal_output_shape(self):
@@ -399,29 +418,44 @@ class StreamingFCLayer_MMV_FG_Batch(HLSCustomOp):
         pe = self.get_nodeattr("PE")
         simd = self.get_nodeattr("SIMD")
         wmem = self.calc_wmem()
-        assert orig_weight_matrix.shape == (
-            mw,
-            mh,
-        ), """Weights matrix doesn't
-        have expected shape (mw, mh)"""
-        assert mw % simd == 0, "Requirement MH divisable by SIMD is violated."
-        assert mh % pe == 0, "Requirement MH divisable by PE is violated."
-        # start by transposing the original weight matrix, since ONNX and
-        # finn-hlslib use different assumptions
-        # ONNX uses (in_features, out_features) and matmul(x, W)
-        # finn-hlslib uses (out_features, in_features) and matmul(W, x)
-        ret = orig_weight_matrix.T
-        if self.get_weight_datatype() == DataType.BIPOLAR:
-            # convert bipolar to binary
-            ret = (ret + 1) / 2
-        # interleave rows between PEs and reshape
-        # distribute rows between PEs
-        ret = interleave_matrix_outer_dim_from_partitions(ret, pe)
-        # create SIMD as innermost dimension and add a dummy outer dim
-        ret = ret.reshape(1, pe, wmem, simd)
-        # reverse the SIMD dimension
-        ret = np.flip(ret, axis=-1)
-        return ret
+        k = self.get_nodeattr("kernel_dim")[0]
+        assert mw % simd == 0, "Requirement MW divisible by SIMD is violated"
+        assert mh % pe == 0, "Requirement MH divisible by PE is violated"
+        if self.get_nodeattr("VVAU"):
+ 
+           assert orig_weight_matrix.shape == (
+              mh,
+              1,
+              k,
+              k
+           ), """Weights matrix doesn't have expected shape (channels, 1, k, k)"""
+           ret = orig_weight_matrix
+           ret = ret.reshape(mh, k*k)
+           ret = interleave_matrix_outer_dim_from_partitions(ret, pe)
+           ret = ret.reshape(1, pe, wmem, 1)
+           return ret
+        else:
+           assert orig_weight_matrix.shape == (
+               mw,
+               mh,
+           ), """Weights matrix doesn't
+           have expected shape (mw, mh)"""
+           # start by transposing the original weight matrix, since ONNX and
+           # finn-hlslib use different assumptions
+           # ONNX uses (in_features, out_features) and matmul(x, W)
+           # finn-hlslib uses (out_features, in_features) and matmul(W, x)
+           ret = orig_weight_matrix.T
+           if self.get_weight_datatype() == DataType.BIPOLAR:
+             # convert bipolar to binary
+             ret = (ret + 1) / 2
+           # interleave rows between PEs and reshape
+           # distribute rows between PEs
+           ret = interleave_matrix_outer_dim_from_partitions(ret, pe)
+           # create SIMD as innermost dimension and add a dummy outer dim
+           ret = ret.reshape(1, pe, wmem, simd)
+           # reverse the SIMD dimension
+           ret = np.flip(ret, axis=-1)
+           return ret
 
     def minimize_accumulator_width(self, model):
         weights = model.get_initializer(self.onnx_node.input[1])
@@ -868,7 +902,7 @@ class StreamingFCLayer_MMV_FG_Batch(HLSCustomOp):
                 % (node_name, rst_name, node_name)
             )
             cmd.append(
-                "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/vvau_act_transport/s_0_axis]"
+                "connect_bd_intf_net [get_bd_intf_pins %s/%s] [get_bd_intf_pins %s/vvau_act_transport/s_0_axis]"
                 % (node_name, din_name, node_name)
             )
         else:
@@ -890,7 +924,7 @@ class StreamingFCLayer_MMV_FG_Batch(HLSCustomOp):
                 )
             # instantiate MMV inputbuffers and broadcast networks
             for m in range(mmv):
-                cmd.append("create_bd_cell -type ip -vlnv xilinx.com:user:inputbuf:1.0 %s/inputbuf_%d" % (node_name, m))
+                cmd.append("create_bd_cell -type ip -vlnv user.org:user:inputbuf:1.0 %s/inputbuf_%d" % (node_name, m))
                 cmd.append("set_property -dict [list CONFIG.WIDTH {%d} CONFIG.DEPTH {%d} CONFIG.NFOLDS {%d} CONFIG.RAM_STYLE {%s}] [get_bd_cells %s/inputbuf_%d]" % (self.get_instream_width_padded(), synapse_fold, neuron_fold, self.get_nodeattr("ibuf_ram_style"), node_name, m))
                 # connect inputbuf clk/rst
                 cmd.append(
