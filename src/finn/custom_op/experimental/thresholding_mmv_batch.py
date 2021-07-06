@@ -76,6 +76,31 @@ class Thresholding_MMV_Batch(Thresholding_Batch):
         mmv = self.get_nodeattr("MMV")
         return mmv * super().lut_estimation()
 
+    # TODO check and add whatever missing
+    def defines(self, var):
+        mmv = self.get_nodeattr("MMV")
+        numInputVectors = list(self.get_nodeattr("numInputVectors"))
+        numReps = numInputVectors[0]//mmv
+        self.code_gen_dict["$DEFINES$"] = [
+            """#define NumChannels1 {}\n #define PE1 {}\n #define numReps {}""".format(
+                self.get_nodeattr("NumChannels"), self.get_nodeattr("PE"), numReps,
+            )
+        ]
+        if self.get_nodeattr("mem_mode") == "decoupled":
+            self.code_gen_dict["$DEFINES$"].append(
+                "#define ActVal1 %d" % self.get_nodeattr("ActVal")
+            )
+            self.code_gen_dict["$DEFINES$"].append(
+                "#define ThresType1 %s"
+                % self.get_weight_datatype().get_hls_datatype_str()
+            )
+            self.code_gen_dict["$DEFINES$"].append(
+                "#define NumSteps1 %d" % self.get_nodeattr("numSteps")
+            )
+            # TODO remove once Thresholding_Stream_Batch is in hlslib:
+            self.code_gen_dict["$DEFINES$"].append(
+                templates.decoupled_thresholding_template
+            )
     def code_generation_ipi(self):
         cmd = []
         # add streamer if needed
