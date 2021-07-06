@@ -49,15 +49,15 @@ class MakeFinegrained(Transformation):
             # StreamingFCLayer_Batch
             #   -emits a Thresholding_Batch if it had thresholding
             # Thresholding_Batch
-            if node.op_type == "FMPadding_Batchno":
-                #iteratively remove everything between a padding node and the subsequent SWU
-                node_output = node.output[0]
-                consumer = model.find_producer(node_output)
-                if consumer is not None:
-                    if producer.op_type != "ConvolutionInputGenerator":
-                        node.output[0] = consumer.output[0]
-                        graph.node.remove(consumer)
-                        return (model, True)
+            #if node.op_type == "FMPadding_Batchno":
+            #    #iteratively remove everything between a padding node and the subsequent SWU
+            #    node_output = node.output[0]
+            #    consumer = model.find_consumer(node_output)
+            #    if consumer is not None:
+            #        if consumer.op_type != "ConvolutionInputGenerator":
+            #            node.output[0] = consumer.output[0]
+            #            graph.node.remove(consumer)
+            #            return (model, True)
 
             if node.op_type == "ConvolutionInputGeneratorno":
                 node_input = node.input[0]
@@ -281,5 +281,23 @@ class MakeFinegrained(Transformation):
                     if consumer2.op_type == "StreamingFIFO_Batch":
                         graph.node.remove(consumer2)
                 return (model, True)
+
+        for node in graph.node:
+            node_ind += 1
+            # convert these layer types:
+            # ConvolutionInputGenerator -> ConvolutionInputGenerator_MMV
+            #   -absorbs any padding before it
+            # StreamingFCLayer_Batch
+            #   -emits a Thresholding_Batch if it had thresholding
+            # Thresholding_Batch
+            if node.op_type == "FMPadding_Batch":
+                #iteratively remove everything between a padding node and the subsequent SWU
+                node_output = node.output[0]
+                consumer = model.find_producer(node_output)
+                if consumer is not None:
+                    if producer.op_type != "ConvolutionInputGenerator":
+                        node.output[0] = consumer.output[0]
+                        graph.node.remove(consumer)
+                        return (model, True)
                 
         return (model, False)
