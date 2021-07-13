@@ -908,7 +908,7 @@ class StreamingFCLayer_MMV_FG_Batch(HLSCustomOp):
         else:
             # instantiate a splitter to break the stream into MMV chunks if needed
             if mmv>1:
-                cmd += axis_gather_bcast_scatter("mvau_immv_transport", 1, mmv, 1, iwidth, parent_hier=node_name)
+                cmd += axis_gather_bcast_scatter("mvau_immv_transport", 1, 1, mmv, iwidth * mmv, parent_hier=node_name)
                 #connect it to input/clk/rst
                 cmd.append(
                     "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/mvau_immv_transport/aclk]"
@@ -919,12 +919,12 @@ class StreamingFCLayer_MMV_FG_Batch(HLSCustomOp):
                     % (node_name, rst_name, node_name)
                 )
                 cmd.append(
-                    "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/mvau_immv_transport/s_0_axis]"
+                    "connect_bd_intf_net [get_bd_intf_pins %s/%s] [get_bd_intf_pins %s/mvau_immv_transport/s_0_axis]"
                     % (node_name, din_name, node_name)
                 )
             # instantiate MMV inputbuffers and broadcast networks
             for m in range(mmv):
-                cmd.append("create_bd_cell -type ip -vlnv user.org:user:inputbuf:1.0 %s/inputbuf_%d" % (node_name, m))
+                cmd.append("create_bd_cell -type ip -vlnv xilinx.com:user:inputbuf:1.0 %s/inputbuf_%d" % (node_name, m))
                 cmd.append("set_property -dict [list CONFIG.WIDTH {%d} CONFIG.DEPTH {%d} CONFIG.NFOLDS {%d} CONFIG.RAM_STYLE {%s}] [get_bd_cells %s/inputbuf_%d]" % (self.get_instream_width_padded(), synapse_fold, neuron_fold, self.get_nodeattr("ibuf_ram_style"), node_name, m))
                 # connect inputbuf clk/rst
                 cmd.append(
@@ -943,10 +943,10 @@ class StreamingFCLayer_MMV_FG_Batch(HLSCustomOp):
                 else:
                     cmd.append(
                         "connect_bd_intf_net [get_bd_intf_pins %s/mvau_immv_transport/m_0_%s_axis] [get_bd_intf_pins %s/inputbuf_%d/s_axis]"
-                        % (node_name, din_name, node_name, m)
+                        % (node_name, m, node_name, m)
                     )
                 # instantiate a bcast network
-                cmd += axis_gather_bcast_scatter("mvau_act_transport_"+str(m), 1, pe, 1, iwidth//mmv, parent_hier=node_name)
+                cmd += axis_gather_bcast_scatter("mvau_act_transport_"+str(m), 1, pe, 1, iwidth, parent_hier=node_name)
                 #connect it to input/clk/rst
                 cmd.append(
                     "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/mvau_act_transport_%d/aclk]"

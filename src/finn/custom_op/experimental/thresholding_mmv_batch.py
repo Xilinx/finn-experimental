@@ -26,7 +26,7 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from math import ceil, log2
+import math
 import textwrap
 import os
 import warnings
@@ -46,6 +46,7 @@ from finn.util.data_packing import (
     pack_innermost_dim_as_hex_string,
 )
 from finn.custom_op.fpgadataflow import templates
+from finn.util.ipi_axis_stitch import axis_gather_bcast_scatter
 
 # ONNX i/o tensor shape assumptions for Thresholding:
 # input 0 is the input tensor, shape (..., NumChannels)
@@ -80,7 +81,7 @@ class Thresholding_MMV_Batch(Thresholding_Batch):
     def defines(self, var):
         mmv = self.get_nodeattr("MMV")
         numInputVectors = list(self.get_nodeattr("numInputVectors"))
-        numReps = numInputVectors[0]//mmv
+        numReps = 1
         self.code_gen_dict["$DEFINES$"] = [
             """#define NumChannels1 {}\n #define PE1 {}\n #define numReps {}""".format(
                 self.get_nodeattr("NumChannels"), self.get_nodeattr("PE"), numReps,
@@ -97,6 +98,9 @@ class Thresholding_MMV_Batch(Thresholding_Batch):
             self.code_gen_dict["$DEFINES$"].append(
                 "#define NumSteps1 %d" % self.get_nodeattr("numSteps")
             )
+            self.code_gen_dict["$DEFINES$"].append(
+                "#define MMV1 %d" % self.get_nodeattr("MMV")
+            )
             # TODO remove once Thresholding_Stream_Batch is in hlslib:
             self.code_gen_dict["$DEFINES$"].append(
                 templates.decoupled_thresholding_template
@@ -108,7 +112,7 @@ class Thresholding_MMV_Batch(Thresholding_Batch):
         mmv = self.get_nodeattr("MMV")
         if mmv == 1:
            return super().code_generation_ipi()
-
+        mem_mode = self.get_nodeattr("mem_mode")
         if mem_mode == "decoupled":
             node_name = self.onnx_node.name
             # create a hierarchy for this layer, with the same port names
@@ -116,18 +120,17 @@ class Thresholding_MMV_Batch(Thresholding_Batch):
             rst_name = self.get_verilog_top_module_intf_names()["rst"][0]
             dout_name = self.get_verilog_top_module_intf_names()["m_axis"][0]
             din_name = self.get_verilog_top_module_intf_names()["s_axis"][0]
-            weight_name = self.get_verilog_top_module_intf_names()["s_axis"][1]
             cmd.append("create_bd_cell -type hier %s" % node_name)
             cmd.append("create_bd_pin -dir I -type clk /%s/%s" % (node_name, clk_name))
             cmd.append("create_bd_pin -dir I -type rst /%s/%s" % (node_name, rst_name))
             cmd.append(
                 "create_bd_intf_pin -mode Master "
                 "-vlnv xilinx.com:interface:axis_rtl:1.0 /%s/%s"
-                % (node_name, dout_name)
+                % (node_name, str(dout_name[0]))
             )
             cmd.append(
                 "create_bd_intf_pin -mode Slave "
-                "-vlnv xilinx.com:interface:axis_rtl:1.0 /%s/%s" % (node_name, din_name)
+                "-vlnv xilinx.com:interface:axis_rtl:1.0 /%s/%s" % (node_name, str(din_name[0]))
             )
 
             # instantiate a streamer and connect it to the HLS IP
@@ -172,8 +175,8 @@ class Thresholding_MMV_Batch(Thresholding_Batch):
 
             # instantiate input scatter
             iwidth = int(math.ceil(self.get_instream_width()/8))*8 * mmv
-            owidth = int(math.ceil(self.get_outstream_width()/8))*8 * mmv
-            cmd += axis_gather_bcast_scatter("immv_transport", 1, 1, mmv, (iwidth//8), parent_hier=node_name)
+            owidth = int(math.ceil(self.get_outstream_width()/8))*8 
+            cmd += axis_gather_bcast_scatter("immv_transport", 1, 1, mmv, iwidth, parent_hier=node_name)
             #connect it to input/clk/rst
             cmd.append(
                 "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/immv_transport/aclk]"
@@ -184,8 +187,8 @@ class Thresholding_MMV_Batch(Thresholding_Batch):
                 % (node_name, rst_name, node_name)
             )
             cmd.append(
-                "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/immv_transport/s_0_axis]"
-                % (node_name, din_name, node_name)
+                "connect_bd_intf_net [get_bd_intf_pins %s/%s] [get_bd_intf_pins %s/immv_transport/s_0_axis]"
+                % (node_name, din_name[0], node_name)
             )
 
             # instantiate weight broadcast
@@ -193,7 +196,7 @@ class Thresholding_MMV_Batch(Thresholding_Batch):
             wwidth_padded=roundup_to_integer_multiple(wwidth, 8)
 
             # weight transport subhierarchy
-            cmd += axis_gather_bcast_scatter("weight_transport", 1, mmv, 1, wwidth_padded//8, parent_hier=node_name)
+            cmd += axis_gather_bcast_scatter("weight_transport", 1, mmv, 1, wwidth_padded, parent_hier=node_name)
             #connect it to input/clk/rst
             cmd.append(
                 "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/weight_transport/aclk]"
@@ -223,7 +226,7 @@ class Thresholding_MMV_Batch(Thresholding_Batch):
             cmd.append(
                 "connect_bd_intf_net [get_bd_intf_pins %s/out_transport/m_0_0_axis] "
                 "[get_bd_intf_pins %s/%s]"
-                % (node_name, node_name, dout_name)
+                % (node_name, node_name, str(dout_name[0]))
             )
 
             # instantiate and connect HLS IPs
@@ -236,17 +239,29 @@ class Thresholding_MMV_Batch(Thresholding_Batch):
                 cmd.append(
                     "connect_bd_intf_net [get_bd_intf_pins %s/out_transport/s_%d_axis] "
                     "[get_bd_intf_pins %s/%s/%s]"
-                    % (node_name, i, node_name, cell_name, dout_name)
+                    % (node_name, i, node_name, cell_name, str(dout_name[0]))
                 )
                 cmd.append(
-                    "connect_bd_intf_net [get_bd_intf_pins %s/immv_transport/m_%d_0_axis] "
+                    "connect_bd_intf_net [get_bd_intf_pins %s/immv_transport/m_0_%d_axis] "
                     "[get_bd_intf_pins %s/%s/%s]"
-                    % (node_name, i, node_name, cell_name, din_name)
+                    % (node_name, i, node_name, cell_name, str(din_name[0]))
                 )
                 cmd.append(
                     "connect_bd_intf_net [get_bd_intf_pins %s/weight_transport/m_%d_0_axis] "
-                    "[get_bd_intf_pins %s/%s/%s]"
-                    % (node_name, i, node_name, cell_name, weight_name)
+                    "[get_bd_intf_pins %s/%s/weights_V_V]"
+                    % (node_name, i, node_name, cell_name)
+                )
+
+                cmd.append(
+                    "connect_bd_net [get_bd_pins %s/%s] "
+                    "[get_bd_pins %s/%s/%s]"
+                    % (node_name, clk_name, node_name, cell_name, clk_name)
+                )
+ 
+                cmd.append(
+                     "connect_bd_net [get_bd_pins %s/%s] "
+                     "[get_bd_pins %s/%s/%s]"
+                     % (node_name, rst_name, node_name, cell_name, rst_name)
                 )
 
             cmd.append("save_bd_design")

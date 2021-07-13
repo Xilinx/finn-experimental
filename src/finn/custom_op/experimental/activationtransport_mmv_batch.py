@@ -125,7 +125,7 @@ class ActivationTransport_MMV_Batch(StreamingDataWidthConverter_Batch):
             return cmd
 
         # split MMV
-        cmd += axis_gather_bcast_scatter("mmv_split", 1, 1, mmv_value, ibits, parent_hier=node_name)
+        cmd += axis_gather_bcast_scatter("mmv_split", 1, 1, mmv_value, ibits*mmv_value, parent_hier=node_name)
         cmd.append(
             "connect_bd_net [get_bd_pins %s/%s] [get_bd_pins %s/mmv_split/aresetn]"
             % (node_name, rst_name, node_name)
