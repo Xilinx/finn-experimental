@@ -20,24 +20,24 @@
 //////////////////////////////////////////////////////////////////////////////////
 
 
-module mmv_swu_rtl #(
-    parameter SIMD = 3,
-    parameter STRIDE_HT = 2,
-    parameter STRIDE_WT = 2,
-    parameter IFMChannels = 3,
+module swu #(
+    parameter SIMD = 32,
+    parameter STRIDE_HT = 1,
+    parameter STRIDE_WT = 1,
+    parameter IFMChannels = 128,
     parameter KERNEL_HEIGHT = 3,
     parameter KERNEL_WIDTH = 3,
-    parameter RAM_STYLE = "distributed",
+    parameter RAM_STYLE = "auto",
 
-	parameter IFMWidth = 224,
-	parameter IFMHeight = 224,
+	parameter IFMWidth = 5,
+	parameter IFMHeight = 5,
 	parameter PADDING_WIDTH = 0,
-	parameter PADDING_HEIGHT =0,
-	parameter OFMWidth = 111,
-	parameter OFMHeight = 111,
+	parameter PADDING_HEIGHT = 0,
+	parameter OFMWidth = 3,
+	parameter OFMHeight = 3,
 
 	//depths per stream
-	parameter IP_PRECISION = 8,
+	parameter IP_PRECISION = 1,
 	parameter MMV_IN = 1,
 	parameter MMV_OUT = 1,
 	parameter DWS = 0,
@@ -47,16 +47,21 @@ module mmv_swu_rtl #(
 (
 input aclk,
 input aresetn,
+
 input [MMV_IN * SIMD * IP_PRECISION - 1 : 0] s_axis_tdata,
 input s_axis_tvalid,
 output s_axis_tready,
+
 output [MMV_OUT * SIMD * IP_PRECISION - 1 : 0] m_axis_tdata,
 input m_axis_tready,
 output m_axis_tvalid
+
     );
- localparam   BUFFER_SIZE = (STRIDE_HT - 1 + KERNEL_HEIGHT) * IFMWidth * IFMChannels/SIMD ;
+    
+localparam   BUFFER_SIZE = (STRIDE_HT - 1 + KERNEL_HEIGHT) * IFMWidth * IFMChannels/SIMD ;
 localparam floor_O_BY_I = MMV_OUT/MMV_IN;
 localparam ceil_O_BY_I = (MMV_OUT + MMV_IN-1)/MMV_IN;
+
 localparam EFF_CHANNELS = IFMChannels/SIMD;
 localparam SIZEA = BUFFER_SIZE/MMV_IN;
 localparam SIZEB = BUFFER_SIZE;
@@ -67,6 +72,7 @@ localparam WIDTHB = SIMD * IP_PRECISION;
 localparam ALLOW_WRITES = ((KERNEL_HEIGHT - PADDING_HEIGHT - 1) * IFMWidth/MMV_IN + KERNEL_WIDTH + ((MMV_OUT - 1) * STRIDE_WT)) * EFF_CHANNELS;
 localparam EXTRA_ROW = (((IFMWidth%2 == 0) & PADDING_HEIGHT == 0)) || ((IFMWidth%2 != 0) & (PADDING_HEIGHT != 0)) ? 1 : 0;
 //(* ram_style = RAM_STYLE *) reg [SIMD*IP_PRECISION-1:0] mem[BUFFER_SIZE - 1:0];  
+
 integer counter=0;   
 reg buffer_full=0;
 reg buffer_full_i=0;
