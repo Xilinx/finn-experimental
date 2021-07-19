@@ -52,9 +52,9 @@ class MakeFinegrained(Transformation):
             if node.op_type == "FMPadding_Batch":
                 #iteratively remove everything between a padding node and the subsequent SWU
                 node_output = node.output[0]
-                consumer = model.find_producer(node_output)
+                consumer = model.find_consumer(node_output)
                 if consumer is not None:
-                    if producer.op_type != "ConvolutionInputGenerator":
+                    if consumer.op_type != "ConvolutionInputGenerator":
                         node.output[0] = consumer.output[0]
                         graph.node.remove(consumer)
                         return (model, True)
@@ -132,6 +132,10 @@ class MakeFinegrained(Transformation):
                     mmode = getCustomOp(node).get_nodeattr("mem_mode")
                     if mmode == "const":
                         mmode = "decoupled"
+                else:
+                    k = getCustomOp(node).get_nodeattr("Kernel")
+                    channels = getCustomOp(node).get_nodeattr("Channels")
+                    dim = getCustomOp(node).get_nodeattr("Dim")
                 new_node = helper.make_node(
                     "StreamingFCLayer_MMV_FG_Batch",
                     [node_input, weight_input],
@@ -140,8 +144,8 @@ class MakeFinegrained(Transformation):
                     backend="fpgadataflow",
                     PE = getCustomOp(node).get_nodeattr("PE"),
                     SIMD = 1 if is_vvau else getCustomOp(node).get_nodeattr("SIMD"),
-                    MW = -1 if is_vvau else getCustomOp(node).get_nodeattr("MW"),
-                    MH = -1 if is_vvau else getCustomOp(node).get_nodeattr("MH"),
+                    MW = k[0]*k[1] if is_vvau else getCustomOp(node).get_nodeattr("MW"),
+                    MH = channels if is_vvau else getCustomOp(node).get_nodeattr("MH"),
                     resType = getCustomOp(node).get_nodeattr("resType"),
                     actVal = getCustomOp(node).get_nodeattr("ActVal"),
                     inputDataType = getCustomOp(node).get_nodeattr("inputDataType"),
@@ -149,12 +153,13 @@ class MakeFinegrained(Transformation):
                     outputDataType = getCustomOp(node).get_nodeattr("outputDataType"),
                     accDataType = getCustomOp(node).get_nodeattr("accDataType"),
                     binaryXnorMode = 0 if is_vvau else getCustomOp(node).get_nodeattr("binaryXnorMode"),
-                    numInputVectors = -1 if is_vvau else getCustomOp(node).get_nodeattr("numInputVectors"),
+                    numInputVectors = list([1] + list(dim)) if is_vvau else getCustomOp(node).get_nodeattr("numInputVectors"),
                     mem_mode = "decoupled" if is_vvau else mmode,
                     ram_style = "auto" if is_vvau else getCustomOp(node).get_nodeattr("ram_style"),
                     ibuf_ram_style = "auto" if is_vvau else getCustomOp(node).get_nodeattr("ram_style"),
                     MMV = 1,
                     VVAU = 1 if is_vvau else 0,
+                    kernel_dim = k if is_vvau else [0,0] #TODO: set sensible value for MVAU kernel
                 )
                 graph.node.insert(node_ind, new_node)
                 # remove old nodes
@@ -176,7 +181,7 @@ class MakeFinegrained(Transformation):
                     NumChannels = getCustomOp(node).get_nodeattr("NumChannels"),
                     PE = getCustomOp(node).get_nodeattr("PE"),
                     numSteps = getCustomOp(node).get_nodeattr("numSteps"),
-                    actVal = getCustomOp(node).get_nodeattr("ActVal"),
+                    ActVal = getCustomOp(node).get_nodeattr("ActVal"),
                     inputDataType = getCustomOp(node).get_nodeattr("inputDataType"),
                     weightDataType = getCustomOp(node).get_nodeattr("weightDataType"),
                     outputDataType = getCustomOp(node).get_nodeattr("outputDataType"),
