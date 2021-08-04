@@ -53,8 +53,6 @@ class ConvolutionInputGenerator_MMV(HLSCustomOp):
             "OFMDim": ("ints", True, []),  # [H, W] = [Y, X]
             "SIMD": ("i", True, 0),
             "Stride": ("ints", True, [1, 1]),  # [H, W] = [Y, X]
-            # note: only dilation=1 supported for now
-            "Dilation": ("ints", True, [1, 1]),  # [H, W] = [Y, X]
             # FINN DataTypes for inputs, weights, outputs
             "inputDataType": ("s", True, ""),
             "outputDataType": ("s", True, ""),
@@ -71,13 +69,49 @@ class ConvolutionInputGenerator_MMV(HLSCustomOp):
                 True,
                 [1, 1, 1, 1],
             ),  # [H_begin, W_begin, H_end, W_end] = [Y_begin, X_begin, Y_end, X_end]
-            # controls distribution of padded pixels
-            # in case of uneven padding -- see FMPadding fxn
-            # in hlslib
-            "PaddingStyle": ("i", False, 2, {2, 1}),
         }
         my_attrs.update(super().get_nodeattr_types())
         return my_attrs
+
+    def get_folded_input_shape(self):
+        ifm_dim = self.get_nodeattr("IFMDim")
+        ifm_ch = self.get_nodeattr("IFMChannels")
+        simd = self.get_nodeattr("SIMD")
+        assert ifm_ch % simd == 0, "SIMD must divide"
+        wf = int(ifm_ch/simd)
+        folded_ishape = (1, ifm_dim[0], ifm_dim[1], wf, simd)
+        return folded_ishape
+
+    def get_folded_output_shape(self):
+        k = self.get_nodeattr("ConvKernelDim")
+        ifm_dim = self.get_nodeattr("IFMDim")
+        ifm_ch = self.get_nodeattr("IFMChannels")
+        stride = self.get_nodeattr("Stride")
+        simd = self.get_nodeattr("SIMD")
+        pad = self.get_nodeattr("Padding")[0]
+        ofm_dim = compute_conv_output_dim(ifm_dim[0], k[0] , stride[0], pad*2)
+        assert ifm_ch % simd == 0, "SIMD must divide IFMChannels"
+        wf = int((k[0] *k[1] * ifm_ch)// simd)
+        folded_oshape = (1, ofm_dim, ofm_dim, wf, simd)
+        return folded_oshape
+    def get_normal_input_shape(self):
+
+        ifm_dim = self.get_nodeattr("IFMDim")
+        ifm_ch = self.get_nodeattr("IFMChannels")
+
+        ishape = (1, ifm_dim[0], ifm_dim[1], ifm_ch)
+        return ishape
+
+
+    def get_normal_output_shape(self):
+        k = self.get_nodeattr("ConvKernelDim")
+        ifm_dim = self.get_nodeattr("IFMDim")
+        ifm_ch = self.get_nodeattr("IFMChannels")
+        stride = self.get_nodeattr("Stride")
+        pad = self.get_nodeattr("Padding")[0]
+        ofm_dim = compute_conv_output_dim(ifm_dim, k, stride, pad*2)
+        oshape = (1, ofm_dim[0], ofm_dim[1], k * k * ifm_ch)
+        return oshape 
 
     def get_instream_width(self):
         """Returns stream width, input and output stream width are equal for
@@ -168,8 +202,12 @@ class ConvolutionInputGenerator_MMV(HLSCustomOp):
         dout_name = self.get_verilog_top_module_intf_names()["m_axis"][0][0]
         din_name = self.get_verilog_top_module_intf_names()["s_axis"][0][0]
         cmd.append("create_bd_cell -type ip -vlnv xilinx.com:user:swu:1.0 %s" % (node_name))
-        padding_height = (ofmdim[1] - (ifmdim[1] - 2))//2
-        padding_width = (ofmdim[0] - (ifmdim[0] - 2))//2
+        padding_height = (self.get_nodeattr("Padding")[0]+self.get_nodeattr("Padding")[2])/2
+        padding_width = (self.get_nodeattr("Padding")[1]+self.get_nodeattr("Padding")[3])/2
+        assert padding_height == int(padding_height), "Cannot implement symmetric vertical padding"
+        assert padding_width == int(padding_width), "Cannot implement symmetric horizontal padding"
+        padding_height = int(padding_height)
+        padding_width = int(padding_width)
         buffer_size =  ifmdim[0] * (ifmch//simd) * k[1]
         if ofmdim[0]//mmvi==0:            
             OFMDIM_MOD_MMV=0
@@ -189,7 +227,9 @@ class ConvolutionInputGenerator_MMV(HLSCustomOp):
                                         CONFIG.OFMHeight {%d} \
                                         CONFIG.IP_PRECISION {%d}\
                                         CONFIG.MMV_IN {%d}\
-                                        CONFIG.MMV_OUT {%d}]\
+                                        CONFIG.MMV_OUT {%d}\
+                                        CONFIG.DWS {%d}\
+                                        CONFIG.ZEROPAD {%d}]\
                                         [get_bd_cells %s]" % (simd,
                                                             stride[0],
                                                             stride[1],
@@ -205,6 +245,8 @@ class ConvolutionInputGenerator_MMV(HLSCustomOp):
                                                             precision,
                                                             mmvi,
                                                             mmvo,
+                                                            self.get_nodeattr("depthwise"),
+                                                            1,
                                                             node_name
                                                             )
                     )
