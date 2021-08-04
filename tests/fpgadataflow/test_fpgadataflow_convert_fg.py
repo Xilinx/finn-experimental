@@ -155,7 +155,10 @@ def fold_cnv(model):
 @pytest.mark.parametrize(
     "ext_act", [True, False]
 )
-def test_convert_to_finegrained(bnn_config, mmode, ext_act):
+@pytest.mark.parametrize(
+    "mmv_swu", [False, True]
+)
+def test_convert_to_finegrained(mmv_swu, bnn_config, mmode, ext_act):
     net, wb, ab = bnn_config
 
     (model, ishape) = get_trained_network_and_ishape(net, wb, ab)
@@ -217,8 +220,7 @@ def test_convert_to_finegrained(bnn_config, mmode, ext_act):
     model = model.transform(GiveUniqueNodeNames())
     model = model.transform(GiveReadableTensorNames())
 
-    model = model.transform(MakeFinegrained())
-
+    model = model.transform(MakeFinegrained(enable_mmv=mmv_swu))
 
     model = model.transform(GiveUniqueNodeNames())
     model = model.transform(GiveReadableTensorNames())

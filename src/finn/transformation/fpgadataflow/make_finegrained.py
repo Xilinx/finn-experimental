@@ -35,8 +35,11 @@ from finn.custom_op.registry import getCustomOp
 class MakeFinegrained(Transformation):
     """Convert nodes of a FINN graph to their fine-grained, MMV-capable equivalents"""
 
-    def __init__(self):
+    def __init__(self, enable_mmv=False):
         super().__init__()
+        # if true, will insert MMV-specific infrastructure:
+        # MMV-capable SWU, DWC, FIFOs
+        self.mmv_en = enable_mmv
 
     def apply(self, model):
         graph = model.graph
@@ -49,7 +52,8 @@ class MakeFinegrained(Transformation):
             # StreamingFCLayer_Batch
             #   -emits a Thresholding_Batch if it had thresholding
             # Thresholding_Batch
-            if node.op_type == "FMPadding_Batch":
+            # DWC/FIFO
+            if node.op_type == "FMPadding_Batch" and self.mmv_en:
                 #iteratively remove everything between a padding node and the subsequent SWU
                 node_output = node.output[0]
                 consumer = model.find_producer(node_output)
@@ -59,7 +63,7 @@ class MakeFinegrained(Transformation):
                         graph.node.remove(consumer)
                         return (model, True)
 
-            if node.op_type == "ConvolutionInputGenerator":
+            if node.op_type == "ConvolutionInputGenerator" and self.mmv_en:
                 node_input = node.input[0]
                 node_output = node.output[0]
                 # pick up existing SWU parameters
@@ -161,7 +165,7 @@ class MakeFinegrained(Transformation):
                 graph.node.remove(node)
                 return (model, True)
 
-            elif node.op_type == "Thresholding_Batch":
+            elif node.op_type == "Thresholding_Batch" and self.mmv_en:
                 if getCustomOp(node).get_nodeattr("runtime_writeable_weights") == 1:
                     continue
                 node_input = node.input[0]
@@ -191,7 +195,7 @@ class MakeFinegrained(Transformation):
                 graph.node.remove(node)
                 return (model, True)
 
-            elif node.op_type == "StreamingDataWidthConverter_Batch":
+            elif node.op_type == "StreamingDataWidthConverter_Batch" and self.mmv_en:
                 node_input = node.input[0]
                 node_output = node.output[0]
                 depth = 0
@@ -226,7 +230,7 @@ class MakeFinegrained(Transformation):
                         graph.node.remove(consumer)
                 return (model, True)
 
-            elif node.op_type == "StreamingFIFO":
+            elif node.op_type == "StreamingFIFO" and self.mmv_en:
                 node_input = node.input[0]
                 node_output = node.output[0]
                 iw = getCustomOp(node).get_instream_width()
