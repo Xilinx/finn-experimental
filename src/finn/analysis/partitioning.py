@@ -32,6 +32,7 @@ import time
 import json
 import networkx as nx
 import matplotlib.pyplot as plt
+import copy
 from finn.custom_op.registry import getCustomOp
 from finn.util.platforms import platforms
 from finn.util.platforms import DEFAULT_RES_LIMITS
@@ -631,6 +632,6 @@ def partition(model, target_clk_ns, target_platform="U250", ndevices=1, nreplica
             for attr in config:
                 floorplan[key][attr] = config[attr]
             i += 1
-        floorplans += [floorplan]
+        floorplans += [copy.deepcopy(floorplan)]
     return floorplans
 
