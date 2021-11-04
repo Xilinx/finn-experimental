@@ -94,7 +94,7 @@ class ConvDoublePacked_Batch(HLSCustomOp):
     def get_input_datatype(self):
         """Returns FINN DataType of input."""
         idt = DataType[self.get_nodeattr("inputDataType")]
-        assert idt == DataType.UINT8, "inputDataType must be UINT8"
+        assert idt == DataType["UINT8"], "inputDataType must be UINT8"
         return idt
 
     def get_weight_datatype(self):
@@ -285,9 +285,9 @@ class ConvDoublePacked_Batch(HLSCustomOp):
     def read_npy_data(self):
         code_gen_dir = self.get_nodeattr("code_gen_dir_cppsim")
         dtype = self.get_input_datatype()
-        if dtype == DataType.BIPOLAR:
+        if dtype == DataType["BIPOLAR"]:
             # use binary for bipolar storage
-            dtype = DataType.BINARY
+            dtype = DataType["BINARY"]
         elem_bits = dtype.bitwidth()
         packed_bits = self.get_instream_width()
         packed_hls_type = "ap_uint<%d>" % packed_bits
@@ -312,9 +312,9 @@ class ConvDoublePacked_Batch(HLSCustomOp):
     def dataoutstrm(self):
         code_gen_dir = self.get_nodeattr("code_gen_dir_cppsim")
         dtype = self.get_output_datatype()
-        if dtype == DataType.BIPOLAR:
+        if dtype == DataType["BIPOLAR"]:
             # use binary for bipolar storage
-            dtype = DataType.BINARY
+            dtype = DataType["BINARY"]
         elem_bits = dtype.bitwidth()
         packed_bits = self.get_outstream_width()
         packed_hls_type = "ap_uint<%d>" % packed_bits
@@ -526,7 +526,7 @@ class ConvDoublePacked_Batch(HLSCustomOp):
         # ONNX uses (in_features, out_features) and matmul(x, W)
         # finn-hlslib uses (out_features, in_features) and matmul(W, x)
         ret = orig_weight_matrix.T
-        if self.get_weight_datatype() == DataType.BIPOLAR:
+        if self.get_weight_datatype() == DataType["BIPOLAR"]:
             # convert bipolar to binary
             ret = (ret + 1) / 2
         # interleave rows between PEs and reshape
@@ -555,11 +555,11 @@ class ConvDoublePacked_Batch(HLSCustomOp):
         ), """Threshold matrix dimension is
         not as expected (2)."""
         n_thres_steps = orig_thres_matrix.shape[1]
-        # inp_is_bipolar = self.get_input_datatype() == DataType.BIPOLAR
-        # wt_is_bipolar = self.get_weight_datatype() == DataType.BIPOLAR
+        # inp_is_bipolar = self.get_input_datatype() == DataType["BIPOLAR"]
+        # wt_is_bipolar = self.get_weight_datatype() == DataType["BIPOLAR"]
         # # reinterpret inp/wt as bipolar if bin_xnor_mode is iset
-        # inp_is_binary = self.get_input_datatype() == DataType.BINARY
-        # wt_is_binary = self.get_weight_datatype() == DataType.BINARY
+        # inp_is_binary = self.get_input_datatype() == DataType["BINARY"]
+        # wt_is_binary = self.get_weight_datatype() == DataType["BINARY"]
         # bin_xnor_mode = self.get_nodeattr("binaryXnorMode") == 1
         # inp_is_bipolar = inp_is_bipolar or (inp_is_binary and bin_xnor_mode)
         # wt_is_bipolar = wt_is_bipolar or (wt_is_binary and bin_xnor_mode)
@@ -607,8 +607,8 @@ class ConvDoublePacked_Batch(HLSCustomOp):
         # we have converted bipolar weights to binary for export,
         # so use it as such for weight generation
 
-        # if self.get_weight_datatype() == DataType.BIPOLAR:
-        #     wdt = DataType.BINARY
+        # if self.get_weight_datatype() == DataType["BIPOLAR"]:
+        #     wdt = DataType["BINARY"]
 
         code_gen_dir = path
 
@@ -642,7 +642,7 @@ class ConvDoublePacked_Batch(HLSCustomOp):
             thresholds = model.get_initializer(self.onnx_node.input[2])
             if thresholds is not None:
                 threshold_tensor = self.get_hls_compatible_threshold_tensor(thresholds)
-                tdt = DataType.INT32
+                tdt = DataType["INT32"]
 
                 thresholds_hls_code = numpy_to_hls_code(
                     threshold_tensor, tdt, "thresholds", True, True
@@ -656,8 +656,8 @@ class ConvDoublePacked_Batch(HLSCustomOp):
                 # tdt_hls = tdt.get_hls_datatype_str()
                 # use binary to export bipolar activations
                 # export_odt = self.get_output_datatype()
-                # if self.get_output_datatype() == DataType.BIPOLAR:
-                #     export_odt = DataType.BINARY
+                # if self.get_output_datatype() == DataType["BIPOLAR"]:
+                #     export_odt = DataType["BINARY"]
                 # odt_hls = export_odt.get_hls_datatype_str()
 
                 f_thresh.write(
@@ -723,10 +723,10 @@ class ConvDoublePacked_Batch(HLSCustomOp):
             inp.shape == exp_ishape
         ), """Input shape doesn't
         match expected shape (1, ifm_dim, ifm_dim, ifm_ch)."""
-        if self.get_input_datatype() == DataType.BIPOLAR:
+        if self.get_input_datatype() == DataType["BIPOLAR"]:
             # store bipolar activations as binary
             inp = (inp + 1) / 2
-            export_idt = DataType.BINARY
+            export_idt = DataType["BINARY"]
         else:
             export_idt = self.get_input_datatype()
         # reshape input into folded form

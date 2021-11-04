@@ -105,7 +105,7 @@ def make_multi_fclayer_model(ch, wdt, adt, tdt, nnodes):
 @pytest.mark.parametrize("platform", ["Pynq-Z1", "Ultra96", "U200"])
 def test_res_alloc(target_fps, platform):
 
-    model = make_multi_fclayer_model(128, DataType.INT4, DataType.INT2, DataType.INT16, 5)
+    model = make_multi_fclayer_model(128, DataType["INT4"], DataType["INT2"], DataType["INT16"], 5)
     
     model = model.transform(GiveUniqueNodeNames())
     parent_model = model.transform(CreateDataflowPartition())

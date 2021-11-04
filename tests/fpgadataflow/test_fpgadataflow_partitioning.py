@@ -102,9 +102,9 @@ def make_multi_fclayer_model(ch, wdt, adt, tdt, nnodes):
     return model
 
 @pytest.mark.parametrize("ch", [64])
-@pytest.mark.parametrize("wdt", [DataType.INT2])
-@pytest.mark.parametrize("adt", [DataType.UINT4])
-@pytest.mark.parametrize("tdt", [DataType.INT16])
+@pytest.mark.parametrize("wdt", [DataType["INT2"]])
+@pytest.mark.parametrize("adt", [DataType["UINT4"]])
+@pytest.mark.parametrize("tdt", [DataType["INT16"]])
 @pytest.mark.parametrize("nnodes", [5, 20, 200])
 @pytest.mark.parametrize("platform", ["U50", "U250"])
 def test_partitioning_singledevice(ch, wdt, adt, tdt, nnodes, platform):
@@ -139,9 +139,9 @@ def test_partitioning_singledevice(ch, wdt, adt, tdt, nnodes, platform):
         assert len(counts.keys()) > 1
 
 @pytest.mark.parametrize("ch", [64])
-@pytest.mark.parametrize("wdt", [DataType.INT2])
-@pytest.mark.parametrize("adt", [DataType.UINT4])
-@pytest.mark.parametrize("tdt", [DataType.INT16])
+@pytest.mark.parametrize("wdt", [DataType["INT2"]])
+@pytest.mark.parametrize("adt", [DataType["UINT4"]])
+@pytest.mark.parametrize("tdt", [DataType["INT16"]])
 @pytest.mark.parametrize("nnodes", [40])
 @pytest.mark.parametrize("platform", ["U50"])
 def test_partitioning_multidevice(ch, wdt, adt, tdt, nnodes, platform):
@@ -169,9 +169,9 @@ def test_partitioning_multidevice(ch, wdt, adt, tdt, nnodes, platform):
     assert len(counts.keys()) > 1
     
 @pytest.mark.parametrize("ch", [64])
-@pytest.mark.parametrize("wdt", [DataType.INT2])
-@pytest.mark.parametrize("adt", [DataType.UINT4])
-@pytest.mark.parametrize("tdt", [DataType.INT16])
+@pytest.mark.parametrize("wdt", [DataType["INT2"]])
+@pytest.mark.parametrize("adt", [DataType["UINT4"]])
+@pytest.mark.parametrize("tdt", [DataType["INT16"]])
 @pytest.mark.parametrize("nnodes", [10])
 @pytest.mark.parametrize("platform", ["U50"])
 def test_partitioning_multireplica(ch, wdt, adt, tdt, nnodes, platform):

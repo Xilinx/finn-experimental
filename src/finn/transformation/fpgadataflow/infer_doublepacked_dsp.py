@@ -55,13 +55,9 @@ class InferDoublePackedConv(Transformation):
         for v in vals:
             assert int(v) == v, "Error float value"
 
-        for k in DataType.__members__:
+        cands = DataType.get_accumulator_dt_cands()
+        for k in cands:
             dt = DataType[k]
-
-            if dt in [DataType.FLOAT32]:
-                # not currently supported
-                continue
-
             if (dt.min() <= vals).all() and (vals <= dt.max()).all():
                 return dt
 
@@ -117,17 +113,17 @@ class InferDoublePackedConv(Transformation):
                     )
                     continue
                 if wdt.signed():
-                    wdt = DataType.INT8
+                    wdt = DataType["INT8"]
                 else:
-                    wdt = DataType.UINT8
+                    wdt = DataType["UINT8"]
 
                 model.set_tensor_datatype(weight_name, wdt)
                 idtypes = [idt, wdt]
                 has_signed_inp = len(list(filter(lambda x: x.signed(), idtypes))) != 0
                 if has_signed_inp:
-                    acc_dt = DataType.INT32
+                    acc_dt = DataType["INT32"]
                 else:
-                    acc_dt = DataType.UINT32
+                    acc_dt = DataType["UINT32"]
 
                 # create new intermediate values
                 inp_trans_out = helper.make_tensor_value_info(
