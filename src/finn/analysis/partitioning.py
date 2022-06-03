@@ -496,7 +496,7 @@ def res_estimation_complete(model, multivariant=True):
             op_type = node.op_type
             inst = getCustomOp(node)
             if multivariant:
-                if op_type == "StreamingFCLayer_Batch" or op_type == "Vector_Vector_Activate_Batch":
+                if op_type == "MatrixVectorActivation" or op_type == "Vector_Vector_Activate_Batch":
                     orig_restype = inst.get_nodeattr("resType")
                     res_dict[node.name] = []
                     for restype in ["dsp", "lut"]:
