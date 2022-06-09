@@ -44,7 +44,7 @@ class SetMemMode(NodeLocalTransformation):
 
     def applyNodeLocal(self, node):
         op_type = node.op_type
-        if op_type == "StreamingFCLayer_Batch":
+        if op_type == "MatrixVectorActivation":
             node_inst = getCustomOp(node)
             wmem = node_inst.calc_wmem()
             if wmem <= self.min_threshold:

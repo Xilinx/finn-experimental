@@ -63,7 +63,7 @@ def make_multi_fclayer_model(ch, wdt, adt, tdt, nnodes):
         assert ch % pe == 0
         assert ch % simd == 0
         FCLayer_nodes += [helper.make_node(
-            "StreamingFCLayer_Batch",
+            "MatrixVectorActivation",
             [tensors[i].name, "weights_"+str(i), "thresh_"+str(i)],
             [tensors[i+1].name],
             domain="finn.custom_op.fpgadataflow",
