@@ -26,26 +26,25 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import math
 import os
 import sys
-import numpy as np
-from shutil import copy
-import math
 
-from finn.custom_op.fpgadataflow.hlscustomop import HLSCustomOp
+import numpy as np
 from finn.core.datatype import DataType
 from onnx import TensorProto, helper
-from finn.util.basic import CppBuilder
-from finn.util.basic import interleave_matrix_outer_dim_from_partitions
+
+from finn.custom_op.fpgadataflow.hlscustomop import HLSCustomOp
+from finn.util.basic import CppBuilder, interleave_matrix_outer_dim_from_partitions
 from finn.util.data_packing import (
     npy_to_rtlsim_input,
     numpy_to_hls_code,
     rtlsim_output_to_npy,
 )
 
+
 class ConvDoublePacked_Batch(HLSCustomOp):
-    """
-    """
+    """ """
 
     def get_nodeattr_types(self):
         my_attrs = {
@@ -249,12 +248,10 @@ class ConvDoublePacked_Batch(HLSCustomOp):
         if noact == 0:
             odt = self.get_output_datatype()
             B = odt.bitwidth()
-            thr_luts = (2 ** B - 1) * acc_bits * math.ceil(self.calc_tmem() / 64)
-            comp_luts = (2 ** B - 1) * acc_bits
+            thr_luts = (2**B - 1) * acc_bits * math.ceil(self.calc_tmem() / 64)
+            comp_luts = (2**B - 1) * acc_bits
 
-        return int(
-            c0 + c1 * (P * (addertree_luts + acc_luts + thr_luts + comp_luts))
-        )
+        return int(c0 + c1 * (P * (addertree_luts + acc_luts + thr_luts + comp_luts)))
 
     def dsp_estimation(self):
         pe = self.get_nodeattr("PE")
@@ -441,8 +438,9 @@ class ConvDoublePacked_Batch(HLSCustomOp):
         d = os.path.dirname(sys.modules["finn.custom_op.experimental"].__file__)
         d = os.path.join(d, "../../../../hlslib_extensions")
         return [
-            """add_files $config_hwsrcdir/top_%s.cpp -cflags \"-std=c++0x -I%s -I$config_bnnlibdir\""""
-             % (self.onnx_node.name, d)
+            """add_files $config_hwsrcdir/top_%s.cpp
+            -cflags \"-std=c++0x -I%s -I$config_bnnlibdir\""""
+            % (self.onnx_node.name, d)
         ]
 
     def docompute(self):
