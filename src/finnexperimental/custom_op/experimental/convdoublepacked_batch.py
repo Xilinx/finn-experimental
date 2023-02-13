@@ -436,7 +436,7 @@ class ConvDoublePacked_Batch(HLSCustomOp):
 
     def ipgen_extra_directives(self):
         "Use the extra tcl directives for HLS synthesis to include the extra hpp."
-        d = os.path.dirname(sys.modules["finn.custom_op.experimental"].__file__)
+        d = os.path.dirname(sys.modules["finnexperimental.custom_op.experimental"].__file__)
         d = os.path.join(d, "../../../../hlslib_extensions")
         return [
             """add_files $config_hwsrcdir/top_%s.cpp
@@ -683,7 +683,7 @@ class ConvDoublePacked_Batch(HLSCustomOp):
         builder.append_includes("-I/workspace/finn-hlslib")
         builder.append_includes("-I{}/include".format(os.environ["VIVADO_PATH"]))
         # include also the cpp definition for doublepacked conv
-        d = os.path.dirname(sys.modules["finn.custom_op.experimental"].__file__)
+        d = os.path.dirname(sys.modules["finnexperimental.custom_op.experimental"].__file__)
         d = os.path.join(d, "../../../../hlslib_extensions")
         builder.append_includes("-I%s" % d)
         builder.append_includes("--std=c++11")
