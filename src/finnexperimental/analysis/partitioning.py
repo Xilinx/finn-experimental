@@ -31,12 +31,16 @@ import time
 
 import networkx as nx
 import numpy as np
-from mip import BINARY, Model, OptimizationStatus, SearchEmphasis, minimize, xsum
-
 from finn.analysis.fpgadataflow.floorplan_params import floorplan_params
-from finn.custom_op.registry import getCustomOp
 from finn.util.fpgadataflow import is_fpgadataflow_node
-from finn.util.platforms import DEFAULT_AVG_CONSTRAINTS, DEFAULT_RES_LIMITS, platforms
+from mip import BINARY, Model, OptimizationStatus, SearchEmphasis, minimize, xsum
+from qonnx.custom_op.registry import getCustomOp
+
+from finnexperimental.util.platforms import (
+    DEFAULT_AVG_CONSTRAINTS,
+    DEFAULT_RES_LIMITS,
+    platforms,
+)
 
 
 class ILP_partitioner(object):

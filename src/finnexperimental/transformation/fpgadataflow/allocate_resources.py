@@ -28,10 +28,10 @@
 
 from finn.analysis.fpgadataflow.exp_cycles_per_layer import exp_cycles_per_layer
 from finn.analysis.fpgadataflow.res_estimation import res_estimation
-from finn.transformation.base import Transformation
+from qonnx.transformation.base import Transformation
 from finn.transformation.fpgadataflow.set_folding import SetFolding
-from finn.transformation.fpgadataflow.set_mem_mode import SetMemMode
-from finn.util.platforms import DEFAULT_RES_LIMITS, platforms
+from finnexperimental.transformation.fpgadataflow.set_mem_mode import SetMemMode
+from finnexperimental.util.platforms import DEFAULT_RES_LIMITS, platforms
 
 
 class AllocateResources(Transformation):

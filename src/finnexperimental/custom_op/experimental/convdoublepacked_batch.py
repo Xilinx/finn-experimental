@@ -31,11 +31,12 @@ import os
 import sys
 
 import numpy as np
-from finn.core.datatype import DataType
+from qonnx.core.datatype import DataType
 from onnx import TensorProto, helper
 
 from finn.custom_op.fpgadataflow.hlscustomop import HLSCustomOp
-from finn.util.basic import CppBuilder, interleave_matrix_outer_dim_from_partitions
+from finn.util.basic import CppBuilder
+from qonnx.util.basic import interleave_matrix_outer_dim_from_partitions
 from finn.util.data_packing import (
     npy_to_rtlsim_input,
     numpy_to_hls_code,

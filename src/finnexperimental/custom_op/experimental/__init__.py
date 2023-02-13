@@ -26,7 +26,9 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from finn.custom_op.experimental.convdoublepacked_batch import ConvDoublePacked_Batch
+from finnexperimental.custom_op.experimental.convdoublepacked_batch import (
+    ConvDoublePacked_Batch,
+)
 
 custom_op = dict()
 custom_op["ConvDoublePacked_Batch"] = ConvDoublePacked_Batch
