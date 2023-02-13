@@ -215,7 +215,7 @@ class InferDoublePackedConv(Transformation):
                     "ConvDoublePacked_Batch",
                     conv_node_inputs,
                     [dp_node_out],
-                    domain="finn.custom_op.experimental",
+                    domain="finnexperimental.custom_op.experimental",
                     backend="fpgadataflow",
                     ConvKernelDim=k,  # ("i",True,0),
                     IFMChannels=ifm_ch,  # ("i",True,0),

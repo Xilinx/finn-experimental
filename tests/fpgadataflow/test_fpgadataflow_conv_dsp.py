@@ -87,7 +87,7 @@ def make_model(ich, och, idim, k, stride, pad, wdt, idt, tdt, odt):
             "MultiThreshold",
             ["inter", "thresh"],
             ["outp"],
-            domain="finn.custom_op.general",
+            domain="finnexperimental.custom_op.general",
             out_bias=0.0,
             out_scale=1.0,
             out_dtype=odt.name
