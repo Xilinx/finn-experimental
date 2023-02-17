@@ -85,11 +85,11 @@ void PE_dsp_packed(ap_uint<8> dataUnsigned[NumVecs][SIMDWidth],
     CASSERT_DATAFLOW(NumVecs % 2 == 0);//ensure even vector size
 
     for(unsigned int v = 0; v < NumVecs; v++) {
-        #pragma HLS UNROLL
+#pragma HLS UNROLL
         tmpMac[v] = 0;
     }
     for(unsigned int simd = 0; simd < SIMDWidth; simd++){
-        #pragma HLS UNROLL
+#pragma HLS UNROLL
         // Low and high bit for weight channel
         unsigned int lowBitWeight = simd * 8;
         unsigned int highBitWeight = (simd+1) * 8 - 1;
@@ -98,14 +98,14 @@ void PE_dsp_packed(ap_uint<8> dataUnsigned[NumVecs][SIMDWidth],
 
         // MAC Operation
         for(unsigned int v = 0; v < NumVecs; v+=2) {
-            #pragma HLS UNROLL
+#pragma HLS UNROLL
             ap_int<27> data = 0;
             ap_int<35> adjust = 0;
             data(7,0) = dataUnsigned[v][simd];
             data(23,16) = dataUnsigned[v+1][simd];
             adjust(16,16) = weight(7,7) & ~(dataUnsigned[v][simd] == 0);
             ap_int<35> tmpMul;
-            #pragma HLS RESOURCE variable=tmpMul core=DSP48     //Implement in DSPs
+#pragma HLS RESOURCE variable=tmpMul core=DSP48     //Implement in DSPs
             tmpMul = data * weight + adjust;
             ap_int<16> tmpMulA = tmpMul(15,0);
             ap_int<16> tmpMulB = tmpMul(31,16);
@@ -149,15 +149,15 @@ void MatrixMultiVector_Precision_Batch_dsp_packed(stream<MultiChanData<NumVecs, 
 
     // input vector buffer
     ap_uint<Precision * SIMDWidth> inputBuf[NumVecs][synapseFold];
-    #pragma HLS ARRAY_PARTITION variable=inputBuf complete dim=1
+#pragma HLS ARRAY_PARTITION variable=inputBuf complete dim=1
 
     // PE accumulator registers, initialized to zero on first call to function
     // why not defined as static? then different calls to StreamingMatrixVector
     // with the same template parameters would share these accumulator registers
     ap_int<MacPrecision> macRegisters[NumVecs][PECount];
-    #pragma HLS ARRAY_PARTITION variable=macRegisters dim=0 complete
+#pragma HLS ARRAY_PARTITION variable=macRegisters dim=0 complete
     for (unsigned int v = 0; v < NumVecs; v++) {
-        #pragma HLS UNROLL
+#pragma HLS UNROLL
         for(unsigned int i = 0; i < PECount; i++) {
           macRegisters[v][i] = 0;
         }
@@ -167,27 +167,27 @@ void MatrixMultiVector_Precision_Batch_dsp_packed(stream<MultiChanData<NumVecs, 
     const unsigned int totalFold = neuronFold * synapseFold;
 
     for (unsigned int i = 0; i < totalFold * numReps; i++) {
-        #pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II=1
         MultiChanData<NumVecs, SIMDWidth * Precision> inElem;
         if (nm == 0) {
             // read input from stream
             inElem = in.read();
             // buffer for reuse
             for(unsigned int v = 0; v < NumVecs; v++) {
-                #pragma HLS UNROLL
+#pragma HLS UNROLL
                 inputBuf[v][sf] = inElem.data[v];
             }
         } else {
             // reuse buffered input
             for(unsigned int v = 0; v < NumVecs; v++) {
-                #pragma HLS UNROLL
+#pragma HLS UNROLL
                 inElem.data[v] = inputBuf[v][sf];
             }
         }
 
         // Get weight for the channel
         type_input<Precision> dataUnsigned[NumVecs][SIMDWidth];
-        #pragma HLS ARRAY_RESHAPE variable=dataUnsigned complete dim=0
+#pragma HLS ARRAY_RESHAPE variable=dataUnsigned complete dim=0
         for(unsigned int simd = 0; simd < SIMDWidth; simd++){
             // Low and high bit for each input channel
             unsigned int lowBit = simd * Precision;
@@ -199,13 +199,13 @@ void MatrixMultiVector_Precision_Batch_dsp_packed(stream<MultiChanData<NumVecs, 
 
         // compute matrix-vector product for each processing element
         for (unsigned int pe = 0; pe < PECount; pe++) {
-            #pragma HLS UNROLL
+#pragma HLS UNROLL
             ap_int<WeightsPrecision * SIMDWidth> memWeight =  weightMem[pe][nm * synapseFold + sf];
             ap_int<MacPrecision> tmpMac[NumVecs];
-            #pragma HLS ARRAY_RESHAPE variable=tmpMac complete dim=1
+#pragma HLS ARRAY_RESHAPE variable=tmpMac complete dim=1
             PE_dsp_packed<MacPrecision, SIMDWidth, NumVecs>(dataUnsigned, tmpMac, memWeight);
             for(unsigned int v = 0; v < NumVecs; v++) {
-                #pragma HLS UNROLL
+#pragma HLS UNROLL
                 macRegisters[v][pe] += tmpMac[v];
             }
         }
@@ -213,9 +213,9 @@ void MatrixMultiVector_Precision_Batch_dsp_packed(stream<MultiChanData<NumVecs, 
         if(sf == synapseFold) {
             MultiChanData<NumVecs, PECount * ActivationPrecision> outElem;
             for (unsigned int pe = 0; pe < PECount; pe++) {
-                #pragma HLS UNROLL
+#pragma HLS UNROLL
                 ap_uint<ActivationPrecision> outputPe[NumVecs];
-                #pragma HLS ARRAY_PARTITION variable=outputPe complete dim=1
+#pragma HLS ARRAY_PARTITION variable=outputPe complete dim=1
                 if(ActivationType == FULL_THRESHOLDS){
 
                     // TODO: Reducing precision check is used onl because the compiler tries to compile
@@ -226,13 +226,13 @@ void MatrixMultiVector_Precision_Batch_dsp_packed(stream<MultiChanData<NumVecs, 
                     ap_int<ThresholdPrecision> thresholdPe;
                     thresholdPe(ThresholdPrecision - 1, 0) = thresMem[pe][nm](ThresholdPrecision - 1, 0);
                     for(unsigned int v = 0; v < NumVecs; v++) {
-                        #pragma HLS UNROLL
+#pragma HLS UNROLL
                         outputPe[v] = ReducedPrecision_Threshold<ActivationPrecision, MacPrecision, ThresholdPrecision/(NumberOfThresholds-1),
                             NumberOfThresholds-1>(macRegisters[v][pe], thresholdPe);
                     }
                 }else{
                     for(unsigned int v = 0; v < NumVecs; v++) {
-                        #pragma HLS UNROLL
+#pragma HLS UNROLL
                         outputPe[v] = macRegisters[v][pe];
                     }
                 }
@@ -241,7 +241,7 @@ void MatrixMultiVector_Precision_Batch_dsp_packed(stream<MultiChanData<NumVecs, 
                 unsigned int lowBit = pe * ActivationPrecision;
                 unsigned int highBit = (pe+1) * ActivationPrecision - 1;
                 for(unsigned int v = 0; v < NumVecs; v++) {
-                    #pragma HLS UNROLL
+#pragma HLS UNROLL
                     outElem.data[v](highBit, lowBit) = outputPe[v](ActivationPrecision-1, 0);
                     macRegisters[v][pe] = 0;    // clear the accumulator
                 }
@@ -287,28 +287,28 @@ void ConvolutionMMVInputGenerator_kernel_stride(  // This Input generator should
     unsigned int inp = 0, ofm_y = 0, ofm_x = 0, k_y = 0, k_x = 0, current_k_y = 0;
 
     ap_uint<IFMChannels*Input_precision> inputBuf[NumVecs][number_blocks][IFMDim];
-    // #pragma HLS RESOURCE variable=inputBuf core=RAM_S2P_URAM
-    #pragma HLS ARRAY_PARTITION variable=inputBuf complete dim=1
-    #pragma HLS ARRAY_PARTITION variable=inputBuf complete dim=2
+// #pragma HLS RESOURCE variable=inputBuf core=RAM_S2P_URAM
+#pragma HLS ARRAY_PARTITION variable=inputBuf complete dim=1
+#pragma HLS ARRAY_PARTITION variable=inputBuf complete dim=2
 
-    #pragma HLS RESET variable=read_block
-    #pragma HLS DEPENDENCE variable=read_block intra false
-    #pragma HLS RESET variable=inp
+#pragma HLS RESET variable=read_block
+#pragma HLS DEPENDENCE variable=read_block intra false
+#pragma HLS RESET variable=inp
 
-    #pragma HLS DEPENDENCE variable=current_block_write intra false
-    #pragma HLS DEPENDENCE variable=inputBuf inter false
-    #pragma HLS DEPENDENCE variable=inputBuf intra false
+#pragma HLS DEPENDENCE variable=current_block_write intra false
+#pragma HLS DEPENDENCE variable=inputBuf inter false
+#pragma HLS DEPENDENCE variable=inputBuf intra false
 
-    // #pragma HLS RESOURCE variable inputBuf core=RAM_2P_LUTRAM
+// #pragma HLS RESOURCE variable inputBuf core=RAM_2P_LUTRAM
     for (unsigned int count_image = 0; count_image < numReps; count_image++) {
         for (unsigned int i = 0; i < baseIter; i++) {
-            #pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II=1
             if (inp < initial_buffer_cycles) // Initial buffer of PoolDim lines
             {
                 ap_uint<IFMChannels*Input_precision> inElem;
                 inElem = in.read();
                 for(unsigned int v = 0; v < NumVecs; v++){
-                    #pragma HLS UNROLL
+#pragma HLS UNROLL
                     inputBuf[v][current_block_write][current_line] = inElem;
                 }
                 current_line++;
@@ -331,7 +331,7 @@ void ConvolutionMMVInputGenerator_kernel_stride(  // This Input generator should
                     unsigned int current_line_in_block = ofm_x * Stride + k_x;
                     MultiChanData<NumVecs, IFMChannels*Input_precision> outElem;
                     for(unsigned int v = 0; v < NumVecs; v++) {
-                        #pragma HLS UNROLL
+#pragma HLS UNROLL
                         // each buffer's read addr is offset by its buffer index
                         ap_uint<IFMChannels*Input_precision> temp_value = inputBuf[v][current_block_read][(current_line_in_block + v*Stride)];
                         outElem.data[v] = temp_value;
@@ -361,11 +361,11 @@ void ConvolutionMMVInputGenerator_kernel_stride(  // This Input generator should
                     inElem = in.read();
 
                     for(unsigned int v = 0; v < NumVecs; v++){
-                        #pragma HLS UNROLL
+#pragma HLS UNROLL
                         inputBuf[v][current_block_write][current_line] = inElem;
                         }
-                    //#pragma HLS DEPENDENCE variable=inputBuf intra false
-                    #pragma HLS DEPENDENCE variable=inputBuf inter false
+// #pragma HLS DEPENDENCE variable=inputBuf intra false
+#pragma HLS DEPENDENCE variable=inputBuf inter false
                     current_line++;
                     if (current_line == IFMDim) // We read the whole block, we change the next block in which we want to we
                     { // We filled up a block, let's not read until
@@ -374,7 +374,7 @@ void ConvolutionMMVInputGenerator_kernel_stride(  // This Input generator should
                         current_block_write++;
                         if (current_block_write == number_blocks)
                             current_block_write = 0;
-                        #pragma HLS DEPENDENCE variable=current_block_write intra false
+#pragma HLS DEPENDENCE variable=current_block_write intra false
                     }
                 }
                 counter_internal_block++; // = (counter_internal_block +1) % max_cycles;
@@ -421,7 +421,7 @@ void ConvolutionalLayerMMV_Same_Batch_kernel_stride_dsp_packed(stream<ap_uint<IF
         stream<ap_uint<OFMChannels * ActivationPrecision> > & out,
         const ap_uint<SIMDWidth * WeightsPrecision> weightMem[PECount][WMemCount],
         const ap_uint<ThresholdPrecision> threshMem[PECount][TMemCount], const unsigned int numReps) {
-    #pragma HLS INLINE
+#pragma HLS INLINE
 
     // Number of output windows
     // constexpr unsigned int OFMDim = 1 + (IFMDim - Stride) / Stride + (((IFMDim - Stride) % Stride) > 0);
@@ -439,17 +439,17 @@ void ConvolutionalLayerMMV_Same_Batch_kernel_stride_dsp_packed(stream<ap_uint<IF
     // printf("intermediateDimension %d\n",intermediateDimension );
 
     stream<ap_uint<IFMChannels * Input_precision> > resizedInput("resizedInput");
-    #pragma HLS RESOURCE variable=resizedInput core=FIFO_LUTRAM
+#pragma HLS RESOURCE variable=resizedInput core=FIFO_LUTRAM
     stream<MultiChanData<NumVecs, IFMChannels * Input_precision> >swu2dwc("swu2dwc");
-    #pragma HLS RESOURCE variable=swu2dwc core=FIFO_LUTRAM
+#pragma HLS RESOURCE variable=swu2dwc core=FIFO_LUTRAM
     stream<MultiChanData<NumVecs, SIMDWidth * Input_precision> > dwc2mmv("dwc2mmv");
-    #pragma HLS RESOURCE variable=dwc2mmv core=FIFO_LUTRAM
+#pragma HLS RESOURCE variable=dwc2mmv core=FIFO_LUTRAM
     stream<MultiChanData<NumVecs, PECount * ActivationPrecision> > mmv2dwc("mmv2dwc");
-    #pragma HLS RESOURCE variable=mmv2dwc core=FIFO_LUTRAM
+#pragma HLS RESOURCE variable=mmv2dwc core=FIFO_LUTRAM
     stream<MultiChanData<NumVecs, OFMChannels * ActivationPrecision> > dwc2flatten("dwc2flatten");
-    #pragma HLS RESOURCE variable=dwc2flatten core=FIFO_LUTRAM
+#pragma HLS RESOURCE variable=dwc2flatten core=FIFO_LUTRAM
     stream<ap_uint<NumVecs * OFMChannels * ActivationPrecision> > flatten2serialize("flatten2serialize");
-    #pragma HLS RESOURCE variable=flatten2serialize core=FIFO_LUTRAM
+#pragma HLS RESOURCE variable=flatten2serialize core=FIFO_LUTRAM
 
 
     // SameResize_Batch<IFMDim, ConvKernelDim, Stride, IFMChannels, Input_precision, 2>(in, resizedInput, numReps);
