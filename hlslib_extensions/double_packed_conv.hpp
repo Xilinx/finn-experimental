@@ -82,7 +82,7 @@ void PE_dsp_packed(ap_uint<8> dataUnsigned[NumVecs][SIMDWidth],
     ap_int<MacPrecision> tmpMac[NumVecs],
     ap_int<8*SIMDWidth> memWeight) {
 
-    static_assert(NumVecs % 2 == 0);//ensure even vector size
+    static_assert(NumVecs % 2 == 0, "");//ensure even vector size
 
     for(unsigned int v = 0; v < NumVecs; v++) {
 #pragma HLS UNROLL
@@ -105,7 +105,7 @@ void PE_dsp_packed(ap_uint<8> dataUnsigned[NumVecs][SIMDWidth],
             data(23,16) = dataUnsigned[v+1][simd];
             adjust(16,16) = weight(7,7) & ~(dataUnsigned[v][simd] == 0);
             ap_int<35> tmpMul;
-#pragma HLS RESOURCE variable=tmpMul core=DSP48     //Implement in DSPs
+#pragma HLS bind_op variable=tmpMul op=mul impl=dsp
             tmpMul = data * weight + adjust;
             ap_int<16> tmpMulA = tmpMul(15,0);
             ap_int<16> tmpMulB = tmpMul(31,16);
@@ -137,8 +137,8 @@ void MatrixMultiVector_Precision_Batch_dsp_packed(
     const ap_uint<ThresholdPrecision> thresMem[PECount][TMemCount],
     const unsigned int numReps)
 {
-    static_assert(MatrixW % SIMDWidth == 0);
-    static_assert(MatrixH % PECount == 0);
+    static_assert(MatrixW % SIMDWidth == 0, "");
+    static_assert(MatrixH % PECount == 0, "");
 
     // how many different rows each neuron will compute
     // alternatively: number of vertical matrix chunks
@@ -280,22 +280,18 @@ void ConvolutionMMVInputGenerator_kernel_stride(  // This Input generator should
 
     unsigned int counter_internal_block = 0;
     unsigned int current_block_write = 0;
-    unsigned int next_block_write = 0;
     unsigned int current_line = 0;
     unsigned int read_block = 0;
 
 
-    unsigned int inp = 0, ofm_y = 0, ofm_x = 0, k_y = 0, k_x = 0, current_k_y = 0;
+    unsigned int inp = 0, ofm_y = 0, ofm_x = 0, k_y = 0, k_x = 0;
 
     ap_uint<IFMChannels*Input_precision> inputBuf[NumVecs][number_blocks][IFMDim];
 // #pragma HLS RESOURCE variable=inputBuf core=RAM_S2P_URAM
 #pragma HLS ARRAY_PARTITION variable=inputBuf complete dim=1
 #pragma HLS ARRAY_PARTITION variable=inputBuf complete dim=2
 
-#pragma HLS RESET variable=read_block
 #pragma HLS DEPENDENCE variable=read_block intra false
-#pragma HLS RESET variable=inp
-
 #pragma HLS DEPENDENCE variable=current_block_write intra false
 #pragma HLS DEPENDENCE variable=inputBuf inter false
 #pragma HLS DEPENDENCE variable=inputBuf intra false
@@ -443,17 +439,17 @@ void ConvolutionalLayerMMV_Same_Batch_kernel_stride_dsp_packed(
     // printf("intermediateDimension %d\n",intermediateDimension );
 
     hls::stream<ap_uint<IFMChannels * Input_precision>> resizedInput("resizedInput");
-#pragma HLS RESOURCE variable=resizedInput core=FIFO_LUTRAM
+#pragma HLS bind_storage variable=resizedInput type=fifo impl=LUTRAM
     hls::stream<MultiChanData<NumVecs, IFMChannels * Input_precision>> swu2dwc("swu2dwc");
-#pragma HLS RESOURCE variable=swu2dwc core=FIFO_LUTRAM
+#pragma HLS bind_storage variable=swu2dwc type=fifo impl=LUTRAM
     hls::stream<MultiChanData<NumVecs, SIMDWidth * Input_precision>> dwc2mmv("dwc2mmv");
-#pragma HLS RESOURCE variable=dwc2mmv core=FIFO_LUTRAM
+#pragma HLS bind_storage variable=dwc2mmv type=fifo impl=LUTRAM
     hls::stream<MultiChanData<NumVecs, PECount * ActivationPrecision>> mmv2dwc("mmv2dwc");
-#pragma HLS RESOURCE variable=mmv2dwc core=FIFO_LUTRAM
+#pragma HLS bind_storage variable=mmv2dwc type=fifo impl=LUTRAM
     hls::stream<MultiChanData<NumVecs, OFMChannels * ActivationPrecision>> dwc2flatten("dwc2flatten");
-#pragma HLS RESOURCE variable=dwc2flatten core=FIFO_LUTRAM
+#pragma HLS bind_storage variable=dwc2flatten type=fifo impl=LUTRAM
     hls::stream<ap_uint<NumVecs * OFMChannels * ActivationPrecision>> flatten2serialize("flatten2serialize");
-#pragma HLS RESOURCE variable=flatten2serialize core=FIFO_LUTRAM
+#pragma HLS bind_storage variable=flatten2serialize type=fifo impl=LUTRAM
 
     // SameResize_Batch<IFMDim, ConvKernelDim, Stride, IFMChannels, Input_precision, 2>(in, resizedInput, numReps);
     FMPadding_Batch<
