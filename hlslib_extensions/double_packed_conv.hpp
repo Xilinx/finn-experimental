@@ -82,7 +82,7 @@ void PE_dsp_packed(ap_uint<8> dataUnsigned[NumVecs][SIMDWidth],
     ap_int<MacPrecision> tmpMac[NumVecs],
     ap_int<8*SIMDWidth> memWeight) {
 
-    CASSERT_DATAFLOW(NumVecs % 2 == 0);//ensure even vector size
+    static_assert(NumVecs % 2 == 0);//ensure even vector size
 
     for(unsigned int v = 0; v < NumVecs; v++) {
 #pragma HLS UNROLL
@@ -130,14 +130,15 @@ template<unsigned int SIMDWidth,        // number of SIMD lanes per PE
         unsigned int ActivationType = 0,    // Don't use activation
         template<int> class type_input = ap_uint        // For first layer use int value
 >
-void MatrixMultiVector_Precision_Batch_dsp_packed(stream<MultiChanData<NumVecs, SIMDWidth * Precision> > & in,
-        stream<MultiChanData<NumVecs, PECount * ActivationPrecision> > & out,
-        const ap_uint<SIMDWidth * WeightsPrecision> weightMem[PECount][WMemCount],
-        const ap_uint<ThresholdPrecision> thresMem[PECount][TMemCount],
-        const unsigned int numReps)
+void MatrixMultiVector_Precision_Batch_dsp_packed(
+    hls::stream<MultiChanData<NumVecs, SIMDWidth * Precision>>         &in,
+    hls::stream<MultiChanData<NumVecs, PECount * ActivationPrecision>> &out,
+    const ap_uint<SIMDWidth * WeightsPrecision> weightMem[PECount][WMemCount],
+    const ap_uint<ThresholdPrecision> thresMem[PECount][TMemCount],
+    const unsigned int numReps)
 {
-    CASSERT_DATAFLOW(MatrixW % SIMDWidth == 0);
-    CASSERT_DATAFLOW(MatrixH % PECount == 0);
+    static_assert(MatrixW % SIMDWidth == 0);
+    static_assert(MatrixH % PECount == 0);
 
     // how many different rows each neuron will compute
     // alternatively: number of vertical matrix chunks
@@ -266,14 +267,14 @@ template<unsigned int ConvKernelDim,
         unsigned int Stride = 1,
         unsigned int NumVecs=1  >       // MMV value, related to output bandwidth
 void ConvolutionMMVInputGenerator_kernel_stride(  // This Input generator should be used when kernel%stride !=0 (e.g.m k=3 and stride=2)
-    stream<ap_uint<IFMChannels*Input_precision> > &in,
-    stream<MultiChanData<NumVecs, IFMChannels*Input_precision> > & out,
+    hls::stream<ap_uint<IFMChannels*Input_precision>>                &in,
+    hls::stream<MultiChanData<NumVecs, IFMChannels*Input_precision>> &out,
     const unsigned int numReps = 1
-    ){
+){
     constexpr unsigned int number_blocks = ConvKernelDim + Stride ;
     constexpr unsigned int cycles_write_block = (OFMDim * ConvKernelDim * ConvKernelDim)/NumVecs;
     constexpr unsigned int cycles_read_block = IFMDim*Stride;
-    constexpr unsigned int max_cycles = MAX(cycles_write_block, cycles_read_block);
+    constexpr unsigned int max_cycles = std::max(cycles_write_block, cycles_read_block);
     constexpr unsigned int baseIter = IFMDim * ConvKernelDim + OFMDim * max_cycles;
     constexpr unsigned int initial_buffer_cycles = IFMDim * ConvKernelDim;
 
@@ -417,10 +418,13 @@ template<
         unsigned int ActivationType=0,
         template<int> class type_input  = ap_uint   // For first layer use int value
 >
-void ConvolutionalLayerMMV_Same_Batch_kernel_stride_dsp_packed(stream<ap_uint<IFMChannels * Input_precision> > & in,
-        stream<ap_uint<OFMChannels * ActivationPrecision> > & out,
-        const ap_uint<SIMDWidth * WeightsPrecision> weightMem[PECount][WMemCount],
-        const ap_uint<ThresholdPrecision> threshMem[PECount][TMemCount], const unsigned int numReps) {
+void ConvolutionalLayerMMV_Same_Batch_kernel_stride_dsp_packed(
+    hls::stream<ap_uint<IFMChannels * Input_precision>>     &in,
+    hls::stream<ap_uint<OFMChannels * ActivationPrecision>> &out,
+    const ap_uint<SIMDWidth * WeightsPrecision> weightMem[PECount][WMemCount],
+    const ap_uint<ThresholdPrecision> threshMem[PECount][TMemCount],
+    unsigned const  numReps
+) {
 #pragma HLS INLINE
 
     // Number of output windows
@@ -438,23 +442,28 @@ void ConvolutionalLayerMMV_Same_Batch_kernel_stride_dsp_packed(stream<ap_uint<IF
     // printf("OFMDim %d\n",OFMDim );
     // printf("intermediateDimension %d\n",intermediateDimension );
 
-    stream<ap_uint<IFMChannels * Input_precision> > resizedInput("resizedInput");
+    hls::stream<ap_uint<IFMChannels * Input_precision>> resizedInput("resizedInput");
 #pragma HLS RESOURCE variable=resizedInput core=FIFO_LUTRAM
-    stream<MultiChanData<NumVecs, IFMChannels * Input_precision> >swu2dwc("swu2dwc");
+    hls::stream<MultiChanData<NumVecs, IFMChannels * Input_precision>> swu2dwc("swu2dwc");
 #pragma HLS RESOURCE variable=swu2dwc core=FIFO_LUTRAM
-    stream<MultiChanData<NumVecs, SIMDWidth * Input_precision> > dwc2mmv("dwc2mmv");
+    hls::stream<MultiChanData<NumVecs, SIMDWidth * Input_precision>> dwc2mmv("dwc2mmv");
 #pragma HLS RESOURCE variable=dwc2mmv core=FIFO_LUTRAM
-    stream<MultiChanData<NumVecs, PECount * ActivationPrecision> > mmv2dwc("mmv2dwc");
+    hls::stream<MultiChanData<NumVecs, PECount * ActivationPrecision>> mmv2dwc("mmv2dwc");
 #pragma HLS RESOURCE variable=mmv2dwc core=FIFO_LUTRAM
-    stream<MultiChanData<NumVecs, OFMChannels * ActivationPrecision> > dwc2flatten("dwc2flatten");
+    hls::stream<MultiChanData<NumVecs, OFMChannels * ActivationPrecision>> dwc2flatten("dwc2flatten");
 #pragma HLS RESOURCE variable=dwc2flatten core=FIFO_LUTRAM
-    stream<ap_uint<NumVecs * OFMChannels * ActivationPrecision> > flatten2serialize("flatten2serialize");
+    hls::stream<ap_uint<NumVecs * OFMChannels * ActivationPrecision>> flatten2serialize("flatten2serialize");
 #pragma HLS RESOURCE variable=flatten2serialize core=FIFO_LUTRAM
 
-
     // SameResize_Batch<IFMDim, ConvKernelDim, Stride, IFMChannels, Input_precision, 2>(in, resizedInput, numReps);
-    FMPadding_Batch<IFMDim,intermediateDimension,Padding*2,IFMChannels,IFMChannels,ap_uint<Input_precision> >
-        (in,resizedInput, numReps) ;
+    FMPadding_Batch<
+        IFMDim,
+        IFMDim+2*Padding,
+        Padding, Padding,
+        IFMChannels,
+        IFMChannels,
+        ap_uint<Input_precision>
+    >(in,resizedInput, numReps);
 
     ConvolutionMMVInputGenerator_kernel_stride<ConvKernelDim, IFMChannels, Input_precision, intermediateDimension,
             OFMDim, Stride, NumVecs>(resizedInput, swu2dwc, numReps);
