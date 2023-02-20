@@ -438,9 +438,9 @@ class ConvDoublePacked_Batch(HLSCustomOp):
         #d = os.path.dirname(sys.modules["finnexperimental.custom_op.experimental"].__file__)
         #d = os.path.join(d, "../../../../hlslib_extensions")
         return [
-            """set config_exphlsdir "$::env(FINN_ROOT)/deps/finn-experimental/hlslib_extensions" \
-            puts "Experimental HLS dir: $config_exphlsdir" \
-            add_files $config_hwsrcdir/top_%s.cpp \
+            """set config_exphlsdir "$::env(FINN_ROOT)/deps/finn-experimental/hlslib_extensions" \n
+            puts "Experimental HLS dir: $config_exphlsdir" \n
+            add_files $config_hwsrcdir/top_%s.cpp 
             -cflags \"-std=c++14 -I$config_bnnlibdir -I$config_customhlsdir -I$config_exphlsdir"\"""" % self.onnx_node.name
         ]
 
