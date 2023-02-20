@@ -90,7 +90,7 @@ class ConvDoublePacked_Batch(HLSCustomOp):
         my_attrs.update(super().get_nodeattr_types())
         return my_attrs
 
-    def get_input_datatype(self):
+    def get_input_datatype(self, ind=0):
         """Returns FINN DataType of input."""
         idt = DataType[self.get_nodeattr("inputDataType")]
         assert idt == DataType["UINT8"], "inputDataType must be UINT8"
@@ -106,18 +106,18 @@ class ConvDoublePacked_Batch(HLSCustomOp):
     #     """Returns FINN DataType of weights."""
     #     return DataType[self.get_nodeattr("thresDataType")]
 
-    def get_output_datatype(self):
+    def get_output_datatype(self, ind=0):
         """Returns FINN DataType of output."""
         return DataType[self.get_nodeattr("outputDataType")]
 
-    def get_normal_input_shape(self):
+    def get_normal_input_shape(self, ind=0):
         ifm_dim = self.get_nodeattr("IFMDim")
         ifm_ch = self.get_nodeattr("IFMChannels")
 
         ishape = (1, ifm_dim, ifm_dim, ifm_ch)
         return ishape
 
-    def get_folded_input_shape(self):
+    def get_folded_input_shape(self, ind=0):
         # ifm_dim = self.get_nodeattr("IFMDim")
         # ifm_ch = self.get_nodeattr("IFMChannels")
         # simd = self.get_nodeattr("SIMD")
@@ -127,13 +127,13 @@ class ConvDoublePacked_Batch(HLSCustomOp):
         folded_ishape = self.get_normal_input_shape()
         return folded_ishape
 
-    def get_normal_output_shape(self):
+    def get_normal_output_shape(self, ind=0):
         mh = self.get_nodeattr("MH")
         vecs = list(self.get_nodeattr("numInputVectors"))
         normal_output_shape = tuple(vecs + [mh])
         return normal_output_shape
 
-    def get_folded_output_shape(self):
+    def get_folded_output_shape(self, ind=0):
         # mh = self.get_nodeattr("MH")
         # pe = self.get_nodeattr("PE")
         # nf = mh // pe
@@ -146,7 +146,7 @@ class ConvDoublePacked_Batch(HLSCustomOp):
         nf = np.prod(self.get_folded_output_shape()[:-1])
         return nf
 
-    def get_instream_width(self):
+    def get_instream_width(self, ind=0):
         """Returns stream width, input and output stream width are equal for
         the sliding window function"""
         ibits = self.get_input_datatype().bitwidth()
@@ -157,7 +157,7 @@ class ConvDoublePacked_Batch(HLSCustomOp):
         # in_width = simd * ibits
         return in_width
 
-    def get_outstream_width(self):
+    def get_outstream_width(self, ind=0):
         o_bits = self.get_output_datatype().bitwidth()
         # out_width = o_bits * self.get_nodeattr("PE")
         out_width = o_bits * self.get_nodeattr("OFMChannels")
