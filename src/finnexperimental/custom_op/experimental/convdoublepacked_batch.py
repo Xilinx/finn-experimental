@@ -44,7 +44,7 @@ from qonnx.util.basic import interleave_matrix_outer_dim_from_partitions
 
 
 class ConvDoublePacked_Batch(HLSCustomOp):
-    """ """
+    """Docstring about ConvDoublePacked_Batch"""
 
     def get_nodeattr_types(self):
         my_attrs = {
@@ -432,6 +432,17 @@ class ConvDoublePacked_Batch(HLSCustomOp):
 
         numReps = 1  # TODO take it from numInputVectors
         self.code_gen_dict["$DEFINES$"] += ["#define numReps {}".format(numReps)]
+
+    def ipgen_extra_directives(self):
+        "Use the extra tcl directives for HLS synthesis to include the extra hpp."
+        #d = os.path.dirname(sys.modules["finnexperimental.custom_op.experimental"].__file__)
+        #d = os.path.join(d, "../../../../hlslib_extensions")
+        return [
+            """set config_exphlsdir "$::env(FINN_ROOT)/deps/finn-experimental/hlslib_extensions" \
+            puts "Experimental HLS dir: $config_exphlsdir" \
+            add_files $config_hwsrcdir/top_%s.cpp \
+            -cflags \"-std=c++14 -I$config_bnnlibdir -I$config_customhlsdir -I$config_exphlsdir"\"""" % self.onnx_node.name
+        ]
 
     def docompute(self):
         # ram_style = self.get_nodeattr("ram_style")
