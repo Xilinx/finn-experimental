@@ -31,17 +31,16 @@ import os
 import sys
 
 import numpy as np
-from qonnx.core.datatype import DataType
-from onnx import TensorProto, helper
-
 from finn.custom_op.fpgadataflow.hlscustomop import HLSCustomOp
 from finn.util.basic import CppBuilder
-from qonnx.util.basic import interleave_matrix_outer_dim_from_partitions
 from finn.util.data_packing import (
     npy_to_rtlsim_input,
     numpy_to_hls_code,
     rtlsim_output_to_npy,
 )
+from onnx import TensorProto, helper
+from qonnx.core.datatype import DataType
+from qonnx.util.basic import interleave_matrix_outer_dim_from_partitions
 
 
 class ConvDoublePacked_Batch(HLSCustomOp):
@@ -434,16 +433,6 @@ class ConvDoublePacked_Batch(HLSCustomOp):
         numReps = 1  # TODO take it from numInputVectors
         self.code_gen_dict["$DEFINES$"] += ["#define numReps {}".format(numReps)]
 
-    def ipgen_extra_directives(self):
-        "Use the extra tcl directives for HLS synthesis to include the extra hpp."
-        d = os.path.dirname(sys.modules["finnexperimental.custom_op.experimental"].__file__)
-        d = os.path.join(d, "../../../../hlslib_extensions")
-        return [
-            """add_files $config_hwsrcdir/top_%s.cpp
-            -cflags \"-std=c++0x -I%s -I$config_bnnlibdir\""""
-            % (self.onnx_node.name, d)
-        ]
-
     def docompute(self):
         # ram_style = self.get_nodeattr("ram_style")
         # map_to_hls_ram_style = {
@@ -683,7 +672,9 @@ class ConvDoublePacked_Batch(HLSCustomOp):
         builder.append_includes("-I/workspace/finn-hlslib")
         builder.append_includes("-I{}/include".format(os.environ["VIVADO_PATH"]))
         # include also the cpp definition for doublepacked conv
-        d = os.path.dirname(sys.modules["finnexperimental.custom_op.experimental"].__file__)
+        d = os.path.dirname(
+            sys.modules["finnexperimental.custom_op.experimental"].__file__
+        )
         d = os.path.join(d, "../../../../hlslib_extensions")
         builder.append_includes("-I%s" % d)
         builder.append_includes("--std=c++11")
