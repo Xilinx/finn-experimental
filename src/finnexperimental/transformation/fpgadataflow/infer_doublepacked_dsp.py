@@ -27,17 +27,17 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import numpy as np
+from qonnx.core.datatype import DataType
 from onnx import TensorProto, helper
 
-from finn.core.datatype import DataType
-from finn.custom_op.registry import getCustomOp
-from finn.transformation.base import Transformation
-from finn.transformation.infer_shapes import InferShapes
-from finn.util.basic import get_by_name
+from qonnx.custom_op.registry import getCustomOp
+from qonnx.transformation.base import Transformation
+from qonnx.transformation.infer_shapes import InferShapes
+from qonnx.util.basic import get_by_name
 
 
 class InferDoublePackedConv(Transformation):
-    """InferDoublePackedConv """
+    """InferDoublePackedConv"""
 
     def __init__(self, pos=None):
         super(InferDoublePackedConv, self).__init__()
@@ -215,7 +215,7 @@ class InferDoublePackedConv(Transformation):
                     "ConvDoublePacked_Batch",
                     conv_node_inputs,
                     [dp_node_out],
-                    domain="finn.custom_op.experimental",
+                    domain="finnexperimental.custom_op.experimental",
                     backend="fpgadataflow",
                     ConvKernelDim=k,  # ("i",True,0),
                     IFMChannels=ifm_ch,  # ("i",True,0),

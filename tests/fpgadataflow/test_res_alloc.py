@@ -66,7 +66,7 @@ def make_multi_fclayer_model(ch, wdt, adt, tdt, nnodes):
             "MatrixVectorActivation",
             [tensors[i].name, "weights_"+str(i), "thresh_"+str(i)],
             [tensors[i+1].name],
-            domain="finn.custom_op.fpgadataflow",
+            domain="finnexperimental.custom_op.fpgadataflow",
             backend="fpgadataflow",
             MW=ch,
             MH=ch,

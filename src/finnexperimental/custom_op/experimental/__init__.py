@@ -26,35 +26,9 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from finn.custom_op.registry import getCustomOp
-from finn.transformation.base import NodeLocalTransformation
+from finnexperimental.custom_op.experimental.convdoublepacked_batch import (
+    ConvDoublePacked_Batch,
+)
 
-
-class SetMemMode(NodeLocalTransformation):
-    """Set attribute mem_mode in all FC layer nodes to specify which
-    kind of weight storage to use, based on memory depth. Use simple rules:
-    -memories below a min_threshold are set to const and ram_style distributed
-    -memories above a max_threshold are set to external
-    -everything else is set to decoupled and ram_style block"""
-
-    def __init__(self, min_threshold=128, max_threshold=None):
-        super().__init__()
-        self.min_threshold = min_threshold
-        self.max_threshold = max_threshold
-
-    def applyNodeLocal(self, node):
-        op_type = node.op_type
-        if op_type == "MatrixVectorActivation":
-            node_inst = getCustomOp(node)
-            wmem = node_inst.calc_wmem()
-            if wmem <= self.min_threshold:
-                node_inst.set_nodeattr("mem_mode", "const")
-            else:
-                node_inst.set_nodeattr("mem_mode", "decoupled")
-                node_inst.set_nodeattr("ram_style", "block")
-            # set to external if upper threshold exists
-            if self.max_threshold is not None:
-                if wmem > self.max_threshold:
-                    node_inst.set_nodeattr("mem_mode", "external")
-
-        return (node, False)
+custom_op = dict()
+custom_op["ConvDoublePacked_Batch"] = ConvDoublePacked_Batch

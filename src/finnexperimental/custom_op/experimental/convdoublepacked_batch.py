@@ -26,26 +26,25 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import math
 import os
 import sys
-import numpy as np
-from shutil import copy
-import math
 
+import numpy as np
 from finn.custom_op.fpgadataflow.hlscustomop import HLSCustomOp
-from finn.core.datatype import DataType
-from onnx import TensorProto, helper
 from finn.util.basic import CppBuilder
-from finn.util.basic import interleave_matrix_outer_dim_from_partitions
 from finn.util.data_packing import (
     npy_to_rtlsim_input,
     numpy_to_hls_code,
     rtlsim_output_to_npy,
 )
+from onnx import TensorProto, helper
+from qonnx.core.datatype import DataType
+from qonnx.util.basic import interleave_matrix_outer_dim_from_partitions
+
 
 class ConvDoublePacked_Batch(HLSCustomOp):
-    """
-    """
+    """Docstring about ConvDoublePacked_Batch"""
 
     def get_nodeattr_types(self):
         my_attrs = {
@@ -91,7 +90,7 @@ class ConvDoublePacked_Batch(HLSCustomOp):
         my_attrs.update(super().get_nodeattr_types())
         return my_attrs
 
-    def get_input_datatype(self):
+    def get_input_datatype(self, ind=0):
         """Returns FINN DataType of input."""
         idt = DataType[self.get_nodeattr("inputDataType")]
         assert idt == DataType["UINT8"], "inputDataType must be UINT8"
@@ -107,18 +106,18 @@ class ConvDoublePacked_Batch(HLSCustomOp):
     #     """Returns FINN DataType of weights."""
     #     return DataType[self.get_nodeattr("thresDataType")]
 
-    def get_output_datatype(self):
+    def get_output_datatype(self, ind=0):
         """Returns FINN DataType of output."""
         return DataType[self.get_nodeattr("outputDataType")]
 
-    def get_normal_input_shape(self):
+    def get_normal_input_shape(self, ind=0):
         ifm_dim = self.get_nodeattr("IFMDim")
         ifm_ch = self.get_nodeattr("IFMChannels")
 
         ishape = (1, ifm_dim, ifm_dim, ifm_ch)
         return ishape
 
-    def get_folded_input_shape(self):
+    def get_folded_input_shape(self, ind=0):
         # ifm_dim = self.get_nodeattr("IFMDim")
         # ifm_ch = self.get_nodeattr("IFMChannels")
         # simd = self.get_nodeattr("SIMD")
@@ -128,13 +127,13 @@ class ConvDoublePacked_Batch(HLSCustomOp):
         folded_ishape = self.get_normal_input_shape()
         return folded_ishape
 
-    def get_normal_output_shape(self):
+    def get_normal_output_shape(self, ind=0):
         mh = self.get_nodeattr("MH")
         vecs = list(self.get_nodeattr("numInputVectors"))
         normal_output_shape = tuple(vecs + [mh])
         return normal_output_shape
 
-    def get_folded_output_shape(self):
+    def get_folded_output_shape(self, ind=0):
         # mh = self.get_nodeattr("MH")
         # pe = self.get_nodeattr("PE")
         # nf = mh // pe
@@ -147,7 +146,7 @@ class ConvDoublePacked_Batch(HLSCustomOp):
         nf = np.prod(self.get_folded_output_shape()[:-1])
         return nf
 
-    def get_instream_width(self):
+    def get_instream_width(self, ind=0):
         """Returns stream width, input and output stream width are equal for
         the sliding window function"""
         ibits = self.get_input_datatype().bitwidth()
@@ -158,7 +157,7 @@ class ConvDoublePacked_Batch(HLSCustomOp):
         # in_width = simd * ibits
         return in_width
 
-    def get_outstream_width(self):
+    def get_outstream_width(self, ind=0):
         o_bits = self.get_output_datatype().bitwidth()
         # out_width = o_bits * self.get_nodeattr("PE")
         out_width = o_bits * self.get_nodeattr("OFMChannels")
@@ -249,12 +248,10 @@ class ConvDoublePacked_Batch(HLSCustomOp):
         if noact == 0:
             odt = self.get_output_datatype()
             B = odt.bitwidth()
-            thr_luts = (2 ** B - 1) * acc_bits * math.ceil(self.calc_tmem() / 64)
-            comp_luts = (2 ** B - 1) * acc_bits
+            thr_luts = (2**B - 1) * acc_bits * math.ceil(self.calc_tmem() / 64)
+            comp_luts = (2**B - 1) * acc_bits
 
-        return int(
-            c0 + c1 * (P * (addertree_luts + acc_luts + thr_luts + comp_luts))
-        )
+        return int(c0 + c1 * (P * (addertree_luts + acc_luts + thr_luts + comp_luts)))
 
     def dsp_estimation(self):
         pe = self.get_nodeattr("PE")
@@ -438,11 +435,12 @@ class ConvDoublePacked_Batch(HLSCustomOp):
 
     def ipgen_extra_directives(self):
         "Use the extra tcl directives for HLS synthesis to include the extra hpp."
-        d = os.path.dirname(sys.modules["finn.custom_op.experimental"].__file__)
-        d = os.path.join(d, "../../../../hlslib_extensions")
+        #d = os.path.dirname(sys.modules["finnexperimental.custom_op.experimental"].__file__)
+        #d = os.path.join(d, "../../../../hlslib_extensions")
         return [
-            """add_files $config_hwsrcdir/top_%s.cpp -cflags \"-std=c++0x -I%s -I$config_bnnlibdir\""""
-             % (self.onnx_node.name, d)
+            """set config_exphlsdir "$::env(FINN_ROOT)/deps/finn-experimental/hlslib_extensions"
+            puts "Experimental HLS dir: $config_exphlsdir"
+            add_files $config_hwsrcdir/top_%s.cpp -cflags "-std=c++14 -I$config_bnnlibdir -I$config_customhlsdir -I$config_exphlsdir" """ % self.onnx_node.name
         ]
 
     def docompute(self):
@@ -684,7 +682,9 @@ class ConvDoublePacked_Batch(HLSCustomOp):
         builder.append_includes("-I/workspace/finn-hlslib")
         builder.append_includes("-I{}/include".format(os.environ["VIVADO_PATH"]))
         # include also the cpp definition for doublepacked conv
-        d = os.path.dirname(sys.modules["finn.custom_op.experimental"].__file__)
+        d = os.path.dirname(
+            sys.modules["finnexperimental.custom_op.experimental"].__file__
+        )
         d = os.path.join(d, "../../../../hlslib_extensions")
         builder.append_includes("-I%s" % d)
         builder.append_includes("--std=c++11")

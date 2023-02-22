@@ -28,32 +28,48 @@
 
 from finn.analysis.fpgadataflow.exp_cycles_per_layer import exp_cycles_per_layer
 from finn.analysis.fpgadataflow.res_estimation import res_estimation
+from qonnx.transformation.base import Transformation
 from finn.transformation.fpgadataflow.set_folding import SetFolding
-from finn.transformation.fpgadataflow.set_mem_mode import SetMemMode
-from finn.transformation.base import Transformation
-from finn.util.platforms import platforms, DEFAULT_RES_LIMITS
+from finnexperimental.transformation.fpgadataflow.set_mem_mode import SetMemMode
+from finnexperimental.util.platforms import DEFAULT_RES_LIMITS, platforms
 
 
 class AllocateResources(Transformation):
     """Fold a dataflow design to a target fps within resource constraints."""
 
-    def __init__(self, fps_target, clk_ns, platform, devices=1, limits=DEFAULT_RES_LIMITS):
+    def __init__(
+        self, fps_target, clk_ns, platform, devices=1, limits=DEFAULT_RES_LIMITS
+    ):
         super().__init__()
         self.clk_ns = clk_ns
         self.fps_target = fps_target
         self.platform = platform
-        self.cpf_target = 1 if (fps_target == -1) else int((10 ** 9 / clk_ns) / fps_target)
+        self.cpf_target = (
+            1 if (fps_target == -1) else int((10**9 / clk_ns) / fps_target)
+        )
         self.max_luts = limits[0] * sum(
-            [r["LUT"] for r in platforms[platform](devices).resource_count_dict.values()]
+            [
+                r["LUT"]
+                for r in platforms[platform](devices).resource_count_dict.values()
+            ]
         )
         self.max_bram = limits[2] * sum(
-            [r["BRAM_18K"] for r in platforms[platform](devices).resource_count_dict.values()]
+            [
+                r["BRAM_18K"]
+                for r in platforms[platform](devices).resource_count_dict.values()
+            ]
         )
         self.max_uram = limits[3] * sum(
-            [r["URAM"] for r in platforms[platform](devices).resource_count_dict.values()]
+            [
+                r["URAM"]
+                for r in platforms[platform](devices).resource_count_dict.values()
+            ]
         )
         self.max_dsp = limits[4] * sum(
-            [r["DSP"] for r in platforms[platform](devices).resource_count_dict.values()]
+            [
+                r["DSP"]
+                for r in platforms[platform](devices).resource_count_dict.values()
+            ]
         )
 
     def apply(self, model):
@@ -85,7 +101,9 @@ class AllocateResources(Transformation):
             urams = sum([r["URAM"] for r in resource_usage.values()])
             dsps = sum([r["DSP"] for r in resource_usage.values()])
 
-            assert not (urams > 0 and self.max_uram == 0), "URAMs allocated but target platform has no URAM resources"
+            assert not (
+                urams > 0 and self.max_uram == 0
+            ), "URAMs allocated but target platform has no URAM resources"
             # determine if we're overrunning the available resources; if so, lower
             # cpf target and fold again
             if (
