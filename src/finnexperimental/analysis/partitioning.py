@@ -36,11 +36,7 @@ from finn.util.fpgadataflow import is_fpgadataflow_node
 from mip import BINARY, Model, OptimizationStatus, SearchEmphasis, minimize, xsum
 from qonnx.custom_op.registry import getCustomOp
 
-from finnexperimental.util.platforms import (
-    DEFAULT_AVG_CONSTRAINTS,
-    DEFAULT_RES_LIMITS,
-    platforms,
-)
+from finnexperimental.util.platforms import DEFAULT_AVG_CONSTRAINTS, DEFAULT_RES_LIMITS, platforms
 
 
 class ILP_partitioner(object):
@@ -62,23 +58,17 @@ class ILP_partitioner(object):
         abs_anchors=[],
         rel_anchors=[],
     ):
-
         time_init = time.perf_counter()
         model = Model("floorplan")
 
         # aux lists
         task_nodes = list(range(len(task_requirements)))
         compute_nodes = set(range(len(compute_resources)))
-        task_versions = [
-            list(range(len(task_requirements[task]))) for task in task_nodes
-        ]
+        task_versions = [list(range(len(task_requirements[task]))) for task in task_nodes]
 
         # binary variables indicating if task_node[j] goes to compute_node[i] or not
         opt_placement = [
-            [
-                [model.add_var(var_type=BINARY) for version in task]
-                for task in task_requirements
-            ]
+            [[model.add_var(var_type=BINARY) for version in task] for task in task_requirements]
             for i in compute_nodes
         ]
 
@@ -109,18 +99,14 @@ class ILP_partitioner(object):
         for j in range(len(task_dependencies)):
             for o in compute_nodes:
                 src_task = task_dependencies[j][0]
-                model += xsum(
-                    opt_connection_matrix[o][d][j] for d in compute_nodes
-                ) == xsum(
+                model += xsum(opt_connection_matrix[o][d][j] for d in compute_nodes) == xsum(
                     opt_placement[o][src_task][v] for v in task_versions[src_task]
                 )
 
         for j in range(len(task_dependencies)):
             for d in compute_nodes:
                 dst_task = task_dependencies[j][1]
-                model += xsum(
-                    opt_connection_matrix[o][d][j] for o in compute_nodes
-                ) == xsum(
+                model += xsum(opt_connection_matrix[o][d][j] for o in compute_nodes) == xsum(
                     opt_placement[d][dst_task][v] for v in task_versions[dst_task]
                 )
 
@@ -137,9 +123,7 @@ class ILP_partitioner(object):
                             for j in task_nodes
                         ]
                     )
-                    <= (compute_resources * compute_resource_limits).astype(np.int)[i][
-                        r
-                    ]
+                    <= (compute_resources * compute_resource_limits).astype(np.int_)[i][r]
                 )
 
         # constraint 3: not exceed connection resources
@@ -158,9 +142,7 @@ class ILP_partitioner(object):
 
         # constraint 4: each task is allocated once and only once
         for j in task_nodes:
-            sos_vars = [
-                opt_placement[i][j][v] for v in task_versions[j] for i in compute_nodes
-            ]
+            sos_vars = [opt_placement[i][j][v] for v in task_versions[j] for i in compute_nodes]
             model += xsum(sos_vars) == 1
 
         # constraint 5: anchor constrains
@@ -175,9 +157,9 @@ class ILP_partitioner(object):
 
         for task_1, task_2 in rel_anchors:
             for i in compute_nodes:
-                model += xsum(
-                    opt_placement[i][task_1][v] for v in task_versions[task_1]
-                ) == xsum(opt_placement[i][task_2][v] for v in task_versions[task_2])
+                model += xsum(opt_placement[i][task_1][v] for v in task_versions[task_1]) == xsum(
+                    opt_placement[i][task_2][v] for v in task_versions[task_2]
+                )
 
         self.time_create_model = time.perf_counter() - time_init
 
@@ -198,17 +180,14 @@ class ILP_partitioner(object):
         """Implements constrains like: | DSP48+RAMB+URAM (Avg)   | 70%       |"""
         task_nodes = list(range(len(self.task_requirements)))
         compute_nodes = set(range(len(self.compute_resources)))
-        task_versions = [
-            list(range(len(self.task_requirements[task]))) for task in task_nodes
-        ]
+        task_versions = [list(range(len(self.task_requirements[task]))) for task in task_nodes]
         for i in compute_nodes:
             self.model += xsum(
                 [
                     xsum(
                         [
                             xsum(
-                                self.task_requirements[j][v][r]
-                                * self.opt_placement[i][j][v]
+                                self.task_requirements[j][v][r] * self.opt_placement[i][j][v]
                                 for v in task_versions[j]
                             )
                             for j in task_nodes
@@ -229,7 +208,6 @@ class ILP_partitioner(object):
         max_gap=1e-4,
         verbose=False,
     ):
-
         self.model.emphasis = emphasis
         self.model.max_gap = max_gap
 
@@ -284,9 +262,7 @@ class ILP_partitioner(object):
         print("Solution:")
         task_nodes = list(range(len(self.opt_placement[0])))
         compute_nodes = list(range(len(self.opt_placement)))
-        task_versions = [
-            list(range(len(self.task_requirements[task]))) for task in task_nodes
-        ]
+        task_versions = [list(range(len(self.task_requirements[task]))) for task in task_nodes]
         if compute_resources_names is None:
             compute_resources_names = list(range(len(self.compute_resources[0])))
 
@@ -352,8 +328,7 @@ class ILP_partitioner(object):
                         sum(
                             [
                                 sum(
-                                    self.task_requirements[t][v][r]
-                                    * self.opt_placement[i][t][v].x
+                                    self.task_requirements[t][v][r] * self.opt_placement[i][t][v].x
                                     for v in task_versions[t]
                                 )
                                 for t in task_nodes
@@ -506,9 +481,7 @@ class ILP_partitioner(object):
 
         task_nodes = list(range(len(self.opt_placement[0])))
         compute_nodes = list(range(len(self.opt_placement)))
-        task_versions = [
-            list(range(len(self.task_requirements[task]))) for task in task_nodes
-        ]
+        task_versions = [list(range(len(self.task_requirements[task]))) for task in task_nodes]
 
         solution = []
         for t in task_nodes:
@@ -521,16 +494,13 @@ class ILP_partitioner(object):
         return solution
 
     def show_all_solutions(self, compute_resources_names=None):
-
         if self.model.num_solutions < 2:
             self.report_best_solution()
             return
 
         task_nodes = list(range(len(self.opt_placement[0])))
         compute_nodes = list(range(len(self.opt_placement)))
-        task_versions = [
-            list(range(len(self.task_requirements[task]))) for task in task_nodes
-        ]
+        task_versions = [list(range(len(self.task_requirements[task]))) for task in task_nodes]
 
         if compute_resources_names is None:
             compute_resources_names = list(range(len(self.compute_resources[0])))
@@ -690,10 +660,7 @@ def res_estimation_complete(model, multivariant=True):
             op_type = node.op_type
             inst = getCustomOp(node)
             if multivariant:
-                if (
-                    op_type == "MatrixVectorActivation"
-                    or op_type == "VectorVectorActivation"
-                ):
+                if op_type == "MatrixVectorActivation" or op_type == "VectorVectorActivation":
                     orig_restype = inst.get_nodeattr("resType")
                     res_dict[node.name] = []
                     for restype in ["dsp", "lut"]:
@@ -727,13 +694,9 @@ def res_estimation_complete(model, multivariant=True):
                     inst.set_nodeattr("ram_style", orig_ramstyle)
                     inst.set_nodeattr("impl_style", orig_impl_style)
                 else:
-                    res_dict[node.name] = [
-                        {"config": {}, "estimate": inst.node_res_estimation()}
-                    ]
+                    res_dict[node.name] = [{"config": {}, "estimate": inst.node_res_estimation()}]
             else:
-                res_dict[node.name] = [
-                    {"config": {}, "estimate": inst.node_res_estimation()}
-                ]
+                res_dict[node.name] = [{"config": {}, "estimate": inst.node_res_estimation()}]
 
     return res_dict
 
@@ -771,9 +734,7 @@ def partition(
     avg_constraints=DEFAULT_AVG_CONSTRAINTS,
 ):
     # get platform
-    fp_pfm = platforms[target_platform](
-        ndevices, limits=limits, avg_constraints=avg_constraints
-    )
+    fp_pfm = platforms[target_platform](ndevices, limits=limits, avg_constraints=avg_constraints)
     # get resources
     resources = res_estimation_complete(model, multivariant=multivariant)
     # post-process into list of lists
@@ -790,9 +751,7 @@ def partition(
 
     # get connectivity
     graph_edges = []
-    node_list = [
-        n for n in model.graph.node
-    ]  # I also need the list to remove the nodes
+    node_list = [n for n in model.graph.node]  # I also need the list to remove the nodes
     edge_costs = []
     nbranches = 0
     max_bps = int(10**9 * fp_pfm.eth_gbps)
@@ -818,10 +777,7 @@ def partition(
             else:
                 nbps = int(
                     10**9
-                    * (
-                        inst.get_outstream_width_padded()
-                        * inst.get_number_output_values()
-                    )
+                    * (inst.get_outstream_width_padded() * inst.get_number_output_values())
                     / (target_clk_ns * inst.get_exp_cycles())
                 )
             edge_costs.append((nwires, nbps))
