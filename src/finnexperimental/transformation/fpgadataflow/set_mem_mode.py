@@ -1,4 +1,5 @@
-# Copyright (c) 2020, Xilinx
+# Copyright (C) 2020-2022, Xilinx, Inc.
+# Copyright (C) 2024, Advanced Micro Devices, Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -44,13 +45,13 @@ class SetMemMode(NodeLocalTransformation):
 
     def applyNodeLocal(self, node):
         op_type = node.op_type
-        if op_type == "MatrixVectorActivation":
+        if op_type.startswith("MVAU"):
             node_inst = getCustomOp(node)
             wmem = node_inst.calc_wmem()
             if wmem <= self.min_threshold:
-                node_inst.set_nodeattr("mem_mode", "const")
+                node_inst.set_nodeattr("mem_mode", "internal_embedded")
             else:
-                node_inst.set_nodeattr("mem_mode", "decoupled")
+                node_inst.set_nodeattr("mem_mode", "internal_decoupled")
                 node_inst.set_nodeattr("ram_style", "block")
             # set to external if upper threshold exists
             if self.max_threshold is not None:

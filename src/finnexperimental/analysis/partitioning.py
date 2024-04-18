@@ -1,4 +1,5 @@
-# Copyright (c) 2020, Xilinx
+# Copyright (C) 2020-2022, Xilinx, Inc.
+# Copyright (C) 2024, Advanced Micro Devices, Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -481,7 +482,6 @@ class ILP_partitioner(object):
 
         task_nodes = list(range(len(self.opt_placement[0])))
         compute_nodes = list(range(len(self.opt_placement)))
-        task_versions = [list(range(len(self.task_requirements[task]))) for task in task_nodes]
 
         solution = []
         for t in task_nodes:
@@ -597,7 +597,6 @@ class ILP_partitioner(object):
             print("\n")
 
     def draw_tasks_graph(self, with_labels=True, node_size=1, alpha=0.3, arrows=True):
-        compute_nodes = list(range(len(self.opt_placement)))
         DG = nx.DiGraph()
         # plt.figure()
         DG.add_edges_from(self.task_dependencies)
@@ -660,7 +659,7 @@ def res_estimation_complete(model, multivariant=True):
             op_type = node.op_type
             inst = getCustomOp(node)
             if multivariant:
-                if op_type == "MatrixVectorActivation" or op_type == "VectorVectorActivation":
+                if op_type.startswith("MVAU") or op_type.startswith("VVAU"):
                     orig_restype = inst.get_nodeattr("resType")
                     res_dict[node.name] = []
                     for restype in ["dsp", "lut"]:
@@ -670,7 +669,7 @@ def res_estimation_complete(model, multivariant=True):
                             {"config": config, "estimate": inst.node_res_estimation()}
                         )
                     inst.set_nodeattr("resType", orig_restype)
-                elif op_type == "ConvolutionInputGenerator":
+                elif op_type.startswith("ConvolutionInputGenerator"):
                     orig_ramstyle = inst.get_nodeattr("ram_style")
                     res_dict[node.name] = []
                     for restype in ["block", "distributed", "ultra"]:
@@ -680,7 +679,7 @@ def res_estimation_complete(model, multivariant=True):
                             {"config": config, "estimate": inst.node_res_estimation()}
                         )
                     inst.set_nodeattr("ram_style", orig_ramstyle)
-                elif op_type == "StreamingFIFO":
+                elif op_type == "StreamingFIFO_rtl":
                     orig_ramstyle = inst.get_nodeattr("ram_style")
                     orig_impl_style = inst.get_nodeattr("impl_style")
                     res_dict[node.name] = []
@@ -784,9 +783,9 @@ def partition(
         # keep track of how many branches the model has at any point
         # useful if we want to avoid cutting in nonlinear segments
         if linear_cuts:
-            if n.op_type in ["DuplicateStreams_Batch"]:
+            if n.op_type.startswith("DuplicateStreams"):
                 nbranches += 1
-            elif n.op_type in ["AddStreams_Batch"]:
+            elif n.op_type.startswith("AddStreams"):
                 nbranches -= 1
 
     # replicate the net as required

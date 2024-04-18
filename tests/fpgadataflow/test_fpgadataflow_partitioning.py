@@ -1,4 +1,5 @@
-# Copyright (c) 2020, Xilinx
+# Copyright (C) 2020-2022, Xilinx, Inc.
+# Copyright (C) 2024, Advanced Micro Devices, Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -26,61 +27,62 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import random
 import math
-import pytest
-import numpy as np
-from onnx import TensorProto, helper
+import random
 
+import numpy as np
+import pytest
+from finn.analysis.partitioning import partition
 from finn.core.datatype import DataType
-from finn.custom_op.registry import getCustomOp
 from finn.core.modelwrapper import ModelWrapper
-from finn.transformation.general import GiveReadableTensorNames, GiveUniqueNodeNames
+from finn.custom_op.registry import getCustomOp
 from finn.transformation.fpgadataflow.insert_dwc import InsertDWC
 from finn.transformation.fpgadataflow.insert_fifo import InsertFIFO
-from finn.analysis.partitioning import partition
-from finn.transformation.general import ApplyConfig
+from finn.transformation.general import ApplyConfig, GiveReadableTensorNames, GiveUniqueNodeNames
+from onnx import TensorProto, helper
+
 
 def make_multi_fclayer_model(ch, wdt, adt, tdt, nnodes):
-
-    W = np.random.randint(wdt.min(), wdt.max()+1, size=(ch, ch))
+    W = np.random.randint(wdt.min(), wdt.max() + 1, size=(ch, ch))
     W = W.astype(np.float32)
 
-    T = np.random.randint(tdt.min(), tdt.max()+1, size=(ch, 2**adt.bitwidth()-1))
+    T = np.random.randint(tdt.min(), tdt.max() + 1, size=(ch, 2 ** adt.bitwidth() - 1))
     T = T.astype(np.float32)
 
     tensors = []
     tensors.append(helper.make_tensor_value_info("inp", TensorProto.FLOAT, [1, ch]))
     for i in range(1, nnodes):
-        inter = helper.make_tensor_value_info("inter_"+str(i), TensorProto.FLOAT, [1, ch])
+        inter = helper.make_tensor_value_info("inter_" + str(i), TensorProto.FLOAT, [1, ch])
         tensors.append(inter)
     tensors.append(helper.make_tensor_value_info("outp", TensorProto.FLOAT, [1, ch]))
-        
+
     FCLayer_nodes = []
     for i in range(nnodes):
-        pe = int(random.choice([ch/2, ch/4]))
-        simd = int(random.choice([ch/2, ch/4]))
+        pe = int(random.choice([ch / 2, ch / 4]))
+        simd = int(random.choice([ch / 2, ch / 4]))
         assert ch % pe == 0
         assert ch % simd == 0
-        FCLayer_nodes += [helper.make_node(
-            "MatrixVectorActivation",
-            [tensors[i].name, "weights_"+str(i), "thresh_"+str(i)],
-            [tensors[i+1].name],
-            domain="finnexperimental.custom_op.fpgadataflow",
-            backend="fpgadataflow",
-            MW=ch,
-            MH=ch,
-            SIMD=simd,
-            PE=pe,
-            inputDataType=adt.name,
-            weightDataType=wdt.name,
-            outputDataType=adt.name,
-            ActVal=0,
-            binaryXnorMode=0,
-            noActivation=0,
-            inFIFODepth=int(2 ** math.ceil(math.log2(random.randint(1,1000)))),
-            outFIFODepth=int(2 ** math.ceil(math.log2(random.randint(1,1000)))),
-        )]
+        FCLayer_nodes += [
+            helper.make_node(
+                "MVAU_hls",
+                [tensors[i].name, "weights_" + str(i), "thresh_" + str(i)],
+                [tensors[i + 1].name],
+                domain="finn.custom_op.fpgadataflow.hls",
+                backend="fpgadataflow",
+                MW=ch,
+                MH=ch,
+                SIMD=simd,
+                PE=pe,
+                inputDataType=adt.name,
+                weightDataType=wdt.name,
+                outputDataType=adt.name,
+                ActVal=0,
+                binaryXnorMode=0,
+                noActivation=0,
+                inFIFODepth=int(2 ** math.ceil(math.log2(random.randint(1, 1000)))),
+                outFIFODepth=int(2 ** math.ceil(math.log2(random.randint(1, 1000)))),
+            )
+        ]
 
     graph = helper.make_graph(
         nodes=FCLayer_nodes, name="fclayer_graph", inputs=[tensors[0]], outputs=[tensors[-1]]
@@ -91,15 +93,16 @@ def make_multi_fclayer_model(ch, wdt, adt, tdt, nnodes):
 
     model.set_tensor_datatype("inp", adt)
     model.set_tensor_datatype("outp", adt)
-    
-    for i in range(1, nnodes+1):
+
+    for i in range(1, nnodes + 1):
         model.graph.value_info.append(tensors[i])
-        model.set_initializer("weights_"+str(i-1), W)
-        model.set_initializer("thresh_"+str(i-1), T)
-        model.set_tensor_datatype("weights_"+str(i-1), wdt)
-        model.set_tensor_datatype("thresh_"+str(i-1), tdt)
+        model.set_initializer("weights_" + str(i - 1), W)
+        model.set_initializer("thresh_" + str(i - 1), T)
+        model.set_tensor_datatype("weights_" + str(i - 1), wdt)
+        model.set_tensor_datatype("thresh_" + str(i - 1), tdt)
 
     return model
+
 
 @pytest.mark.parametrize("ch", [64])
 @pytest.mark.parametrize("wdt", [DataType["INT2"]])
@@ -115,7 +118,7 @@ def test_partitioning_singledevice(ch, wdt, adt, tdt, nnodes, platform):
     model = model.transform(InsertFIFO())
     model = model.transform(GiveUniqueNodeNames())
     model = model.transform(GiveReadableTensorNames())
-    #apply partitioning
+    # apply partitioning
     floorplan = partition(model, 5, platform)
     if floorplan is not None:
         assert len(floorplan) == 1
@@ -124,19 +127,20 @@ def test_partitioning_singledevice(ch, wdt, adt, tdt, nnodes, platform):
         assert floorplan is None
         return
     model = model.transform(ApplyConfig(floorplan))
-    # check the SLR assignments of each block and 
+    # check the SLR assignments of each block and
     # count the number of SLRs required
     counts = dict()
     for node in model.graph.node:
         nodeInst = getCustomOp(node)
         assert nodeInst.get_nodeattr("slr") != -1
         slr = nodeInst.get_nodeattr("slr")
-        counts["SLR"+str(slr)] = counts.get("SLR"+str(slr),0) + 1
+        counts["SLR" + str(slr)] = counts.get("SLR" + str(slr), 0) + 1
     # check against expectations
     if nnodes < 15:
         assert len(counts.keys()) == 1
     else:
         assert len(counts.keys()) > 1
+
 
 @pytest.mark.parametrize("ch", [64])
 @pytest.mark.parametrize("wdt", [DataType["INT2"]])
@@ -152,22 +156,23 @@ def test_partitioning_multidevice(ch, wdt, adt, tdt, nnodes, platform):
     model = model.transform(InsertFIFO())
     model = model.transform(GiveUniqueNodeNames())
     model = model.transform(GiveReadableTensorNames())
-    #apply partitioning
+    # apply partitioning
     floorplan = partition(model, 5, platform, ndevices=2)
     if floorplan is not None:
         assert len(floorplan) == 1
     floorplan = floorplan[0]
     model = model.transform(ApplyConfig(floorplan))
-    # check the device assignments of each block and 
+    # check the device assignments of each block and
     # count the number of devices required
     counts = dict()
     for node in model.graph.node:
         nodeInst = getCustomOp(node)
         slr = nodeInst.get_nodeattr("device_id")
-        counts["dev"+str(slr)] = counts.get("dev"+str(slr),0) + 1
+        counts["dev" + str(slr)] = counts.get("dev" + str(slr), 0) + 1
     # check against expectations
     assert len(counts.keys()) > 1
-    
+
+
 @pytest.mark.parametrize("ch", [64])
 @pytest.mark.parametrize("wdt", [DataType["INT2"]])
 @pytest.mark.parametrize("adt", [DataType["UINT4"]])
@@ -182,6 +187,6 @@ def test_partitioning_multireplica(ch, wdt, adt, tdt, nnodes, platform):
     model = model.transform(InsertFIFO())
     model = model.transform(GiveUniqueNodeNames())
     model = model.transform(GiveReadableTensorNames())
-    #apply partitioning
+    # apply partitioning
     floorplan = partition(model, 5, platform, nreplicas=2)
     assert len(floorplan) == 2
