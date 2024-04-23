@@ -1,4 +1,5 @@
-# Copyright (c) 2020, Xilinx
+# Copyright (C) 2020-2022, Xilinx, Inc.
+# Copyright (C) 2024, Advanced Micro Devices, Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -26,59 +27,56 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import pytest
 import numpy as np
-import math
-import random
+import pytest
+from finn.analysis.fpgadataflow.exp_cycles_per_layer import exp_cycles_per_layer
+from finn.core.datatype import DataType
+from finn.core.modelwrapper import ModelWrapper
+from finn.custom_op.registry import getCustomOp
+from finn.transformation.fpgadataflow.allocate_resources import AllocateResources
+from finn.transformation.fpgadataflow.create_dataflow_partition import CreateDataflowPartition
+from finn.transformation.general import GiveUniqueNodeNames
+from finn.util.test import load_test_checkpoint_or_skip
 from onnx import TensorProto, helper
 
-from finn.custom_op.registry import getCustomOp
-from finn.core.datatype import DataType
-from finn.analysis.fpgadataflow.exp_cycles_per_layer import exp_cycles_per_layer
-from finn.core.modelwrapper import ModelWrapper
-from finn.transformation.fpgadataflow.allocate_resources import AllocateResources
-from finn.transformation.general import GiveUniqueNodeNames
-from finn.transformation.fpgadataflow.create_dataflow_partition import (
-    CreateDataflowPartition,
-)
-from finn.util.test import load_test_checkpoint_or_skip
 
 def make_multi_fclayer_model(ch, wdt, adt, tdt, nnodes):
-
-    W = np.random.randint(wdt.min(), wdt.max()+1, size=(ch, ch))
+    W = np.random.randint(wdt.min(), wdt.max() + 1, size=(ch, ch))
     W = W.astype(np.float32)
 
-    T = np.random.randint(tdt.min(), tdt.max()+1, size=(ch, 2**adt.bitwidth()-1))
+    T = np.random.randint(tdt.min(), tdt.max() + 1, size=(ch, 2 ** adt.bitwidth() - 1))
     T = T.astype(np.float32)
 
     tensors = []
     tensors.append(helper.make_tensor_value_info("inp", TensorProto.FLOAT, [1, ch]))
     for i in range(1, nnodes):
-        inter = helper.make_tensor_value_info("inter_"+str(i), TensorProto.FLOAT, [1, ch])
+        inter = helper.make_tensor_value_info("inter_" + str(i), TensorProto.FLOAT, [1, ch])
         tensors.append(inter)
     tensors.append(helper.make_tensor_value_info("outp", TensorProto.FLOAT, [1, ch]))
-        
+
     FCLayer_nodes = []
     for i in range(nnodes):
         pe = 1
         simd = 1
-        FCLayer_nodes += [helper.make_node(
-            "MatrixVectorActivation",
-            [tensors[i].name, "weights_"+str(i), "thresh_"+str(i)],
-            [tensors[i+1].name],
-            domain="finnexperimental.custom_op.fpgadataflow",
-            backend="fpgadataflow",
-            MW=ch,
-            MH=ch,
-            SIMD=simd,
-            PE=pe,
-            inputDataType=adt.name,
-            weightDataType=wdt.name,
-            outputDataType=adt.name,
-            ActVal=0,
-            binaryXnorMode=0,
-            noActivation=0,
-        )]
+        FCLayer_nodes += [
+            helper.make_node(
+                "MVAU_hls",
+                [tensors[i].name, "weights_" + str(i), "thresh_" + str(i)],
+                [tensors[i + 1].name],
+                domain="finn.custom_op.fpgadataflow.hls",
+                backend="fpgadataflow",
+                MW=ch,
+                MH=ch,
+                SIMD=simd,
+                PE=pe,
+                inputDataType=adt.name,
+                weightDataType=wdt.name,
+                outputDataType=adt.name,
+                ActVal=0,
+                binaryXnorMode=0,
+                noActivation=0,
+            )
+        ]
 
     graph = helper.make_graph(
         nodes=FCLayer_nodes, name="fclayer_graph", inputs=[tensors[0]], outputs=[tensors[-1]]
@@ -89,25 +87,25 @@ def make_multi_fclayer_model(ch, wdt, adt, tdt, nnodes):
 
     model.set_tensor_datatype("inp", adt)
     model.set_tensor_datatype("outp", adt)
-    
-    for i in range(1, nnodes+1):
+
+    for i in range(1, nnodes + 1):
         if i != nnodes:
             model.graph.value_info.append(tensors[i])
-        model.set_initializer("weights_"+str(i-1), W)
-        model.set_initializer("thresh_"+str(i-1), T)
-        model.set_tensor_datatype("weights_"+str(i-1), wdt)
-        model.set_tensor_datatype("thresh_"+str(i-1), tdt)
+        model.set_initializer("weights_" + str(i - 1), W)
+        model.set_initializer("thresh_" + str(i - 1), T)
+        model.set_tensor_datatype("weights_" + str(i - 1), wdt)
+        model.set_tensor_datatype("thresh_" + str(i - 1), tdt)
 
     return model
 
+
 # desired frames per second
-@pytest.mark.parametrize("target_fps", [30, 10 ** 5, 10 ** 7])
+@pytest.mark.parametrize("target_fps", [30, 10**5, 10**7])
 # target chip or board
 @pytest.mark.parametrize("platform", ["Pynq-Z1", "Ultra96", "U200"])
 def test_res_alloc(target_fps, platform):
-
     model = make_multi_fclayer_model(128, DataType["INT4"], DataType["INT2"], DataType["INT16"], 5)
-    
+
     model = model.transform(GiveUniqueNodeNames())
     parent_model = model.transform(CreateDataflowPartition())
     sdp_node = parent_model.get_nodes_by_op_type("StreamingDataflowPartition")[0]
@@ -116,7 +114,7 @@ def test_res_alloc(target_fps, platform):
     dataflow_model = load_test_checkpoint_or_skip(dataflow_model_filename)
 
     clk_ns = 5
-    target_cycles_per_frame = int((10 ** 9 / clk_ns) / target_fps)
+    target_cycles_per_frame = int((10**9 / clk_ns) / target_fps)
     dataflow_model = dataflow_model.transform(AllocateResources(target_fps, clk_ns, platform))
 
     exp_cycles_dict = dataflow_model.analysis(exp_cycles_per_layer)
@@ -126,7 +124,6 @@ def test_res_alloc(target_fps, platform):
     min_cycles["Pynq-Z1"] = 128
     min_cycles["Ultra96"] = 64
     min_cycles["U200"] = 1
-    
 
     assert achieved_cycles_per_frame <= max(
         min_cycles[platform], target_cycles_per_frame
