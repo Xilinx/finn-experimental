@@ -33,6 +33,7 @@ import time
 import networkx as nx
 import numpy as np
 from finn.analysis.fpgadataflow.floorplan_params import floorplan_params
+from finn.util.basic import part_map
 from finn.util.fpgadataflow import is_fpgadataflow_node
 from mip import BINARY, Model, OptimizationStatus, SearchEmphasis, minimize, xsum
 from qonnx.custom_op.registry import getCustomOp
@@ -644,7 +645,7 @@ def replicate_net(
     return ret_vertices, ret_edges, ret_edge_costs, ret_abs_anchors, ret_rel_anchors
 
 
-def res_estimation_complete(model, multivariant=True):
+def res_estimation_complete(model, fpgapart, multivariant=True):
     """Estimates the resources needed for the given model and all values for
     resource-related switches.
     Ensure that all nodes have unique names (by calling the GiveUniqueNodeNames
@@ -666,7 +667,7 @@ def res_estimation_complete(model, multivariant=True):
                         inst.set_nodeattr("resType", restype)
                         config = {"resType": restype}
                         res_dict[node.name].append(
-                            {"config": config, "estimate": inst.node_res_estimation()}
+                            {"config": config, "estimate": inst.node_res_estimation(fpgapart)}
                         )
                     inst.set_nodeattr("resType", orig_restype)
                 elif op_type.startswith("ConvolutionInputGenerator"):
@@ -676,7 +677,7 @@ def res_estimation_complete(model, multivariant=True):
                         inst.set_nodeattr("ram_style", restype)
                         config = {"ram_style": restype}
                         res_dict[node.name].append(
-                            {"config": config, "estimate": inst.node_res_estimation()}
+                            {"config": config, "estimate": inst.node_res_estimation(fpgapart)}
                         )
                     inst.set_nodeattr("ram_style", orig_ramstyle)
                 elif op_type == "StreamingFIFO_rtl":
@@ -688,14 +689,18 @@ def res_estimation_complete(model, multivariant=True):
                         inst.set_nodeattr("ram_style", restype)
                         config = {"impl_style": "vivado", "ram_style": restype}
                         res_dict[node.name].append(
-                            {"config": config, "estimate": inst.node_res_estimation()}
+                            {"config": config, "estimate": inst.node_res_estimation(fpgapart)}
                         )
                     inst.set_nodeattr("ram_style", orig_ramstyle)
                     inst.set_nodeattr("impl_style", orig_impl_style)
                 else:
-                    res_dict[node.name] = [{"config": {}, "estimate": inst.node_res_estimation()}]
+                    res_dict[node.name] = [
+                        {"config": {}, "estimate": inst.node_res_estimation(fpgapart)}
+                    ]
             else:
-                res_dict[node.name] = [{"config": {}, "estimate": inst.node_res_estimation()}]
+                res_dict[node.name] = [
+                    {"config": {}, "estimate": inst.node_res_estimation(fpgapart)}
+                ]
 
     return res_dict
 
@@ -734,8 +739,9 @@ def partition(
 ):
     # get platform
     fp_pfm = platforms[target_platform](ndevices, limits=limits, avg_constraints=avg_constraints)
+    part = part_map[target_platform]
     # get resources
-    resources = res_estimation_complete(model, multivariant=multivariant)
+    resources = res_estimation_complete(model, part, multivariant=multivariant)
     # post-process into list of lists
     task_requirements = []
     for key in resources:
@@ -787,7 +793,6 @@ def partition(
                 nbranches += 1
             elif n.op_type.startswith("AddStreams"):
                 nbranches -= 1
-
     # replicate the net as required
     (
         task_requirements,

@@ -25,11 +25,13 @@
 # CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+from functools import partial
 
 from finn.analysis.fpgadataflow.exp_cycles_per_layer import exp_cycles_per_layer
 from finn.analysis.fpgadataflow.res_estimation import res_estimation
-from qonnx.transformation.base import Transformation
 from finn.transformation.fpgadataflow.set_folding import SetFolding
+from qonnx.transformation.base import Transformation
+
 from finnexperimental.transformation.fpgadataflow.set_mem_mode import SetMemMode
 from finnexperimental.util.platforms import DEFAULT_RES_LIMITS, platforms
 
@@ -37,39 +39,23 @@ from finnexperimental.util.platforms import DEFAULT_RES_LIMITS, platforms
 class AllocateResources(Transformation):
     """Fold a dataflow design to a target fps within resource constraints."""
 
-    def __init__(
-        self, fps_target, clk_ns, platform, devices=1, limits=DEFAULT_RES_LIMITS
-    ):
+    def __init__(self, fps_target, clk_ns, platform, devices=1, limits=DEFAULT_RES_LIMITS):
         super().__init__()
         self.clk_ns = clk_ns
         self.fps_target = fps_target
         self.platform = platform
-        self.cpf_target = (
-            1 if (fps_target == -1) else int((10**9 / clk_ns) / fps_target)
-        )
+        self.cpf_target = 1 if (fps_target == -1) else int((10**9 / clk_ns) / fps_target)
         self.max_luts = limits[0] * sum(
-            [
-                r["LUT"]
-                for r in platforms[platform](devices).resource_count_dict.values()
-            ]
+            [r["LUT"] for r in platforms[platform](devices).resource_count_dict.values()]
         )
         self.max_bram = limits[2] * sum(
-            [
-                r["BRAM_18K"]
-                for r in platforms[platform](devices).resource_count_dict.values()
-            ]
+            [r["BRAM_18K"] for r in platforms[platform](devices).resource_count_dict.values()]
         )
         self.max_uram = limits[3] * sum(
-            [
-                r["URAM"]
-                for r in platforms[platform](devices).resource_count_dict.values()
-            ]
+            [r["URAM"] for r in platforms[platform](devices).resource_count_dict.values()]
         )
         self.max_dsp = limits[4] * sum(
-            [
-                r["DSP"]
-                for r in platforms[platform](devices).resource_count_dict.values()
-            ]
+            [r["DSP"] for r in platforms[platform](devices).resource_count_dict.values()]
         )
 
     def apply(self, model):
@@ -95,7 +81,9 @@ class AllocateResources(Transformation):
             model = model.transform(SetMemMode(lutmem_thr))
 
             # do resource estimation, and get relative utilization of the target plaform
-            resource_usage = model.analysis(res_estimation)
+            resource_usage = model.analysis(
+                partial(res_estimation, fpgapart="xcu250-figd2104-2L-e")
+            )
             luts = sum([r["LUT"] for r in resource_usage.values()])
             brams = sum([r["BRAM_18K"] for r in resource_usage.values()])
             urams = sum([r["URAM"] for r in resource_usage.values()])
